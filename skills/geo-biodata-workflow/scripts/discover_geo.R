@@ -1,0 +1,426 @@
+#!/usr/bin/env Rscript
+
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) < 2L || length(args) > 3L) {
+  stop("Usage: discover_geo.R GSE000000 /path/to/run-directory [--no-characteristics]", call. = FALSE)
+}
+
+accession <- toupper(args[[1L]])
+run_dir <- args[[2L]]
+skip_characteristics <- length(args) == 3L && identical(args[[3L]], "--no-characteristics")
+if (!grepl("^GSE[0-9]+$", accession)) {
+  stop("The accession must match GSE followed by digits.", call. = FALSE)
+}
+
+required <- c("GEOquery", "httr2", "jsonlite")
+missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing) > 0L) {
+  stop("Missing required packages: ", paste(missing, collapse = ", "), call. = FALSE)
+}
+
+ncbi_email <- Sys.getenv("ENTREZ_EMAIL", unset = "")
+if (!nzchar(ncbi_email)) {
+  ncbi_email <- getOption("Entrez.email", default = "")
+}
+if (!nzchar(ncbi_email)) {
+  cat("Warning: ENTREZ_EMAIL or options('Entrez.email') is not set; set one for repeated NCBI requests.\n")
+}
+
+resources_dir <- file.path(run_dir, "resources")
+for (path in c(
+  run_dir, resources_dir, file.path(run_dir, "raw"), file.path(run_dir, "derived"),
+  file.path(run_dir, "tables"), file.path(run_dir, "figures"),
+  file.path(run_dir, "logs"), file.path(run_dir, "scripts")
+)) {
+  if (!dir.exists(path)) dir.create(path, recursive = TRUE)
+}
+
+request_json <- function(url, query) {
+  request <- httr2::request(url) |>
+    httr2::req_url_query(!!!query) |>
+    httr2::req_user_agent("geo-biodata-workflow/0.1")
+  if (nzchar(ncbi_email)) {
+    request <- request |>
+      httr2::req_headers("NCBI-Email" = ncbi_email)
+  }
+  response <- request |>
+    httr2::req_retry(max_tries = 3L) |>
+    httr2::req_perform()
+  jsonlite::fromJSON(httr2::resp_body_string(response), simplifyVector = FALSE)
+}
+
+collapse_value <- function(value) {
+  value <- unlist(value, recursive = TRUE, use.names = FALSE)
+  value <- value[!is.na(value)]
+  paste(as.character(value), collapse = "; ")
+}
+
+# ── Series-level metadata via NCBI E-utilities ───────────────────────────
+
+search <- request_json(
+  "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+  list(db = "gds", term = paste0(accession, "[ACCN]"), retmode = "json")
+)
+uids <- unlist(search$esearchresult$idlist, use.names = FALSE)
+if (length(uids) < 1L) stop("NCBI GEO did not return a record for ", accession, call. = FALSE)
+
+summary_result <- request_json(
+  "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi",
+  list(db = "gds", id = uids[[1L]], retmode = "json")
+)
+record <- summary_result$result[[uids[[1L]]]]
+
+metadata_names <- setdiff(names(record), "uid")
+metadata <- data.frame(
+  field = metadata_names,
+  value = vapply(record[metadata_names], collapse_value, character(1)),
+  stringsAsFactors = FALSE
+)
+utils::write.table(
+  metadata,
+  file.path(resources_dir, "series_metadata.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+)
+
+# ── Sample index from esummary ───────────────────────────────────────────
+
+sample_records <- record$samples
+samples <- if (length(sample_records) > 0L) {
+  data.frame(
+    gsm = vapply(sample_records, function(x) collapse_value(x$accession), character(1)),
+    title = vapply(sample_records, function(x) collapse_value(x$title), character(1)),
+    stringsAsFactors = FALSE
+  )
+} else {
+  data.frame(gsm = character(), title = character())
+}
+utils::write.table(
+  samples,
+  file.path(resources_dir, "sample_index.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+)
+
+# ── Sample characteristics via GEOquery SOFT parsing ─────────────────────
+
+characteristics <- data.frame(
+  gsm = character(), characteristic = character(), value = character(),
+  stringsAsFactors = FALSE
+)
+
+if (!skip_characteristics && length(sample_records) > 0L) {
+  cat("Extracting sample characteristics from GEO SOFT file...\n")
+  characteristics <- tryCatch({
+    gse_soft <- GEOquery::getGEO(
+      accession,
+      GSEMatrix = FALSE,
+      getGPL = FALSE,
+      AnnotGPL = FALSE
+    )
+    gsm_list <- GEOquery::GSMList(gse_soft)
+    all_chars <- list()
+    for (gsm_name in names(gsm_list)) {
+      gsm_meta <- GEOquery::Meta(gsm_list[[gsm_name]])
+      char_keys <- grep("^characteristics_ch", names(gsm_meta), value = TRUE)
+      if (length(char_keys) == 0L) next
+      for (key in char_keys) {
+        raw_values <- gsm_meta[[key]]
+        for (raw in raw_values) {
+          parts <- strsplit(raw, ":\\s*", perl = TRUE)[[1L]]
+          if (length(parts) >= 2L) {
+            all_chars[[length(all_chars) + 1L]] <- data.frame(
+              gsm = gsm_name,
+              characteristic = trimws(parts[[1L]]),
+              value = trimws(paste(parts[-1L], collapse = ": ")),
+              stringsAsFactors = FALSE
+            )
+          } else if (nzchar(trimws(raw))) {
+            all_chars[[length(all_chars) + 1L]] <- data.frame(
+              gsm = gsm_name,
+              characteristic = key,
+              value = trimws(raw),
+              stringsAsFactors = FALSE
+            )
+          }
+        }
+      }
+    }
+    if (length(all_chars) > 0L) {
+      do.call(rbind, all_chars)
+    } else {
+      data.frame(
+        gsm = character(), characteristic = character(), value = character(),
+        stringsAsFactors = FALSE
+      )
+    }
+  }, error = function(e) {
+    cat("Warning: Could not extract sample characteristics:", conditionMessage(e), "\n")
+    data.frame(
+      gsm = character(), characteristic = character(), value = character(),
+      stringsAsFactors = FALSE
+    )
+  })
+}
+
+if (nrow(characteristics) > 0L) {
+  char_wide <- reshape(
+    characteristics,
+    idvar = "gsm",
+    timevar = "characteristic",
+    direction = "wide"
+  )
+  names(char_wide) <- gsub("^value\\.", "", names(char_wide))
+} else {
+  char_wide <- data.frame(
+    gsm = if (nrow(samples) > 0L) samples$gsm else character(),
+    note = rep("No structured characteristics extracted", nrow(samples)),
+    stringsAsFactors = FALSE
+  )
+  if (nrow(char_wide) == 0L) {
+    char_wide <- data.frame(gsm = character(), note = character(), stringsAsFactors = FALSE)
+  }
+}
+
+utils::write.table(
+  char_wide,
+  file.path(resources_dir, "sample_characteristics.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+)
+
+# ── Geo-series-type summary for routing ──────────────────────────────────
+
+detected_fields <- names(record)
+assay_hint <- NA_character_
+if ("gdstype" %in% detected_fields) {
+  assay_hint <- collapse_value(record$gdstype)
+}
+
+series_relation <- if (!is.null(record$relations)) collapse_value(record$relations) else ""
+superseries_warning <- grepl("super.?series|sub.?series", series_relation, ignore.case = TRUE)
+
+platform_ids <- if (!is.null(record$gpl)) {
+  gsub("[^0-9]", "", unlist(record$gpl, recursive = TRUE, use.names = FALSE))
+} else {
+  character()
+}
+
+cat(sprintf(
+  "Accession: %s\nAssay hint: %s\nPlatform(s): %s\nSamples: %d\n",
+  accession,
+  if (is.na(assay_hint)) "unknown" else assay_hint,
+  if (length(platform_ids) > 0L) paste(platform_ids, collapse = ", ") else "unknown",
+  nrow(samples)
+))
+if (superseries_warning) {
+  cat("Series relation warning: this record appears to reference a SuperSeries/SubSeries relationship; review related GSE accessions before analysis.\n")
+}
+
+# ── Supplementary file index ─────────────────────────────────────────────
+
+cat("Listing GEO supplementary files...\n")
+supplements <- tryCatch(
+  GEOquery::getGEOSuppFiles(
+    accession,
+    makeDirectory = FALSE,
+    baseDir = resources_dir,
+    fetch_files = FALSE
+  ),
+  error = function(error) {
+    data.frame(error = conditionMessage(error), stringsAsFactors = FALSE)
+  }
+)
+supplements <- data.frame(supplements, check.names = FALSE)
+if (ncol(supplements) == 0L) {
+  supplements <- data.frame(
+    status = "NO_SUPPLEMENT_FILES",
+    message = "GEOquery returned no series-level supplementary files.",
+    stringsAsFactors = FALSE
+  )
+}
+if ("size" %in% names(supplements)) {
+  supplements$size_mb <- round(supplements$size / 1e6, 2)
+}
+utils::write.table(
+  supplements,
+  file.path(resources_dir, "supplement_index.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+)
+
+# ── Publication links ────────────────────────────────────────────────────
+
+pubmed_ids <- unique(unlist(record$pubmedids, recursive = TRUE, use.names = FALSE))
+pubmed_ids <- pubmed_ids[nzchar(pubmed_ids)]
+publications <- if (length(pubmed_ids) > 0L) {
+  pmc_ids <- vapply(pubmed_ids, function(pmid) {
+    tryCatch({
+      resp <- httr2::request(
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ) |>
+        httr2::req_url_query(
+          query = paste0("EXT_ID:", pmid),
+          resultType = "core",
+          format = "json"
+        ) |>
+        httr2::req_user_agent("geo-biodata-workflow/0.1") |>
+        httr2::req_retry(max_tries = 2L) |>
+        httr2::req_perform()
+      result <- jsonlite::fromJSON(
+        httr2::resp_body_string(resp),
+        simplifyVector = FALSE
+      )$resultList$result
+      if (length(result) > 0L) {
+        pmcid <- result[[1L]]$pmcid
+        if (is.null(pmcid)) NA_character_ else pmcid
+      } else {
+        NA_character_
+      }
+    }, error = function(e) NA_character_)
+  }, character(1), USE.NAMES = FALSE)
+
+  data.frame(
+    identifier_type = "PMID",
+    identifier = pubmed_ids,
+    pmcid = pmc_ids,
+    url = paste0("https://pubmed.ncbi.nlm.nih.gov/", pubmed_ids, "/"),
+    open_access_url = ifelse(
+      is.na(pmc_ids), NA_character_,
+      paste0("https://www.ncbi.nlm.nih.gov/pmc/articles/", pmc_ids, "/")
+    ),
+    stringsAsFactors = FALSE
+  )
+} else {
+  data.frame(
+    identifier_type = character(), identifier = character(),
+    pmcid = character(), url = character(),
+    open_access_url = character(), stringsAsFactors = FALSE
+  )
+}
+utils::write.table(
+  publications,
+  file.path(resources_dir, "publication_links.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+)
+
+# ── SRA/BioProject links for raw-data handoff ────────────────────────────
+
+bioproject <- if (!is.null(record$bioproject)) collapse_value(record$bioproject) else ""
+sra_links <- data.frame(
+  accession = accession,
+  bioproject = bioproject,
+  sra_url = if (nzchar(bioproject)) {
+    paste0("https://www.ncbi.nlm.nih.gov/sra/?term=", bioproject)
+  } else {
+    "not_available"
+  },
+  fetchngs_hint = if (nzchar(bioproject)) {
+    paste0(
+      "Write ", bioproject, " to a one-line accessions file, then run: ",
+      "nf-core fetchngs --input accessions.txt --outdir raw_fastq/"
+    )
+  } else {
+    "not_available"
+  },
+  stringsAsFactors = FALSE
+)
+utils::write.table(
+  sra_links,
+  file.path(resources_dir, "sra_links.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+)
+
+# ── Routing hint ─────────────────────────────────────────────────────────
+
+assay_str <- if (is.na(assay_hint)) "" else tolower(assay_hint)
+routing <- data.frame(
+  accession = accession,
+  assay_type = if (is.na(assay_hint)) "unknown" else assay_hint,
+  series_relation = series_relation,
+  superseries_or_subseries = superseries_warning,
+  n_samples = nrow(samples),
+  n_platforms = length(platform_ids),
+  has_supplements = !identical(names(supplements), c("status", "message")),
+  likely_scRNA = grepl(
+    "single.cell|scrna|scRNA|10x|droplet|smart-seq",
+    assay_str, ignore.case = TRUE
+  ),
+  likely_bulk = grepl(
+    "expression.profiling.by.array|expression.profiling.by.high.throughput",
+    assay_str, ignore.case = TRUE
+  ),
+  recommended_route = {
+    if (grepl("single.cell|scrna|scRNA|10x|droplet|smart-seq",
+              assay_str, ignore.case = TRUE)) {
+      "scRNA"
+    } else if (grepl("array", assay_str, ignore.case = TRUE)) {
+      "bulk_microarray"
+    } else if (grepl("high.throughput", assay_str, ignore.case = TRUE)) {
+      "bulk_counts_or_normalized"
+    } else {
+      "review_metadata"
+    }
+  },
+  stringsAsFactors = FALSE
+)
+utils::write.table(
+  routing,
+  file.path(resources_dir, "routing_hint.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+)
+
+# ── Status ───────────────────────────────────────────────────────────────
+
+now_utc <- format(Sys.time(), tz = "UTC", usetz = TRUE)
+n_chars <- nrow(characteristics)
+n_char_fields <- if (nrow(char_wide) > 0L) ncol(char_wide) - 1L else 0L
+status <- data.frame(
+  accession = accession,
+  state = "RESOURCE_INVENTORY_COMPLETE",
+  updated_at_utc = now_utc,
+  note = paste0(
+    "Review metadata and supplement_index.tsv before downloading. ",
+    "Extracted characteristics for ", n_chars, " entries across ", n_char_fields, " fields.",
+    if (superseries_warning) " SuperSeries/SubSeries relation requires manual review." else ""
+  ),
+  stringsAsFactors = FALSE
+)
+utils::write.table(
+  status,
+  file.path(run_dir, "workflow_status.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE
+)
+
+summary_lines <- c(
+  paste("#", accession, "resource inventory"),
+  "",
+  paste("Generated:", now_utc),
+  "",
+  "Status: `RESOURCE_INVENTORY_COMPLETE`",
+  "",
+  sprintf("Assay: %s | Samples: %d | Platforms: %s",
+          if (is.na(assay_hint)) "unknown" else assay_hint,
+          nrow(samples),
+          if (length(platform_ids) > 0L) paste(platform_ids, collapse = ", ") else "unknown"),
+  "",
+  paste("Recommended route:", routing$recommended_route),
+  "",
+  "Review the following before selecting an input route:",
+  "",
+  "- `resources/series_metadata.tsv` — GEO series-level metadata",
+  "- `resources/sample_index.tsv` — GSM accessions and titles",
+  "- `resources/sample_characteristics.tsv` — extracted sample-level characteristics",
+  "- `resources/supplement_index.tsv` — GEO supplementary file listing",
+  "- `resources/publication_links.tsv` — publication identifiers and open-access URLs",
+  "- `resources/routing_hint.tsv` — automatically inferred assay type and route",
+  "- `resources/sra_links.tsv` — SRA/BioProject links for raw-data handoff",
+  "",
+  if (superseries_warning) {
+    "SuperSeries/SubSeries warning: review related accessions before choosing the analysis unit."
+  } else {
+    NULL
+  },
+  "If sample characteristics were not extractable, review the GEO page directly.",
+  "Use `--no-characteristics` to skip the SOFT download for very large series."
+)
+writeLines(summary_lines, file.path(run_dir, "summary.md"), useBytes = TRUE)
+
+cat("RESOURCE_INVENTORY_COMPLETE\n")
+cat(normalizePath(run_dir, winslash = "/", mustWork = TRUE), "\n")

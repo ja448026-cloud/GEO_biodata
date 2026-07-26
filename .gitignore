@@ -1,0 +1,15 @@
+runs/
+validation/runs/
+.Rhistory
+.RData
+.Rproj.user/
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.h5
+*.h5ad
+*.rds
+*.RDS
+*.mtx
+*.mtx.gz

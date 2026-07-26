@@ -1,0 +1,71 @@
+# Public MVP Plan
+
+Date: 2026-07-27
+
+## Goal
+
+Build `geo_biodata_workflow` as a lightweight public workflow for agents. A user should be able to provide a GEO Series accession and have an agent follow a repeatable path for public resource discovery, environment checks, selective downloads, basic QC, simple transcriptome or scRNA analysis, and diagnostic figures.
+
+## Design Boundary
+
+This project should be a workflow and skill, not a heavy R package.
+
+Keep deterministic operations as small scripts:
+
+- environment check;
+- GEO metadata and supplement discovery;
+- publication supplement lookup;
+- selective download with hashes;
+- optional templates for bulk expression, GSEA, and scRNA first-pass analysis.
+
+Keep method judgment as short references:
+
+- routing and resource triage;
+- bulk DE and GSEA principles;
+- scRNA QC, clustering, annotation, and marker-panel principles;
+- stop states and reporting expectations.
+
+Do not copy whole external skill libraries into this repo. Use their reusable patterns to write concise local guidance.
+
+## Release Boundary For v0.1
+
+Include:
+
+- `skills/geo-biodata-workflow/SKILL.md`;
+- `agents/openai.yaml`;
+- lightweight R scripts;
+- concise reference files for routing, bulk/DE/GSEA, and scRNA;
+- validation notes for syntax, skill validation, resource discovery, and download guard behavior.
+
+Do not include:
+
+- local absolute paths;
+- downloaded GEO data;
+- generated run directories;
+- project-specific biology;
+- FASTQ alignment/quantification;
+- heavy single-cell integration, trajectory, or communication workflows;
+- claims that every GEO record can be analyzed automatically.
+
+## Method Modules
+
+| Module | Public route | Main dependency |
+|---|---|---|
+| GEO discovery | metadata, GSM index, supplements, publication links | GEOquery, httr2 |
+| Resource collection | reviewed download, manifest, hashes | GEOquery, digest |
+| Bulk expression | QC, PCA, correlation, DE, heatmap/MA/volcano | limma, DESeq2, edgeR |
+| Enrichment | ranked-list GSEA and guidance for GO/KEGG/Reactome/MSigDB | fgsea, clusterProfiler |
+| scRNA | QC metrics, clustering, UMAP, markers, author-label comparison | Seurat |
+
+## Promotion Criteria
+
+- A clean checkout contains no private path or generated data.
+- The skill folder passes the host agent's skill validator.
+- R scripts parse without executing downloads.
+- The README explains the one-accession workflow without overstating automation.
+- The workflow stops explicitly when metadata or inputs are insufficient.
+- The skill can be installed by another agent without hidden local context.
+
+## Later Work
+
+Add real examples only after the structure is stable. Prefer small, public, processed examples and keep downloaded files out of Git. Extract an R package only if repeated use reveals stable functions that are awkward as scripts.
