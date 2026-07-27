@@ -117,6 +117,20 @@ expect_status(
   0L
 )
 
+expect_status(
+  "Normalized bulk manifest",
+  "Rscript",
+  c(file.path(script_dir, "validate_manifest.R"), file.path(repo_root, "validation", "fixtures", "manifest_bulk_normalized", "run_manifest.yaml")),
+  0L
+)
+
+expect_status(
+  "Microarray manifest",
+  "Rscript",
+  c(file.path(script_dir, "validate_manifest.R"), file.path(repo_root, "validation", "fixtures", "manifest_microarray", "run_manifest.yaml")),
+  0L
+)
+
 invalid_dir <- file.path(scratch, "manifest_invalid")
 dir.create(invalid_dir, recursive = TRUE, showWarnings = FALSE)
 invalid_manifest <- file.path(invalid_dir, "run_manifest.yaml")
@@ -183,11 +197,61 @@ if (all(vapply(c("DESeq2", "ggplot2", "SummarizedExperiment"), requireNamespace,
     0L
   )
   status <- utils::read.delim(file.path(bulk_dir, "workflow_status.tsv"), stringsAsFactors = FALSE)
-  if (!identical(status$state[[1L]], "BASIC_ANALYSIS_COMPLETE")) {
-    fail("Bulk driver did not produce BASIC_ANALYSIS_COMPLETE.")
+  valid_completion <- c("BASIC_ANALYSIS_COMPLETE", "QC_REVIEW_REQUIRED")
+  if (!status$state[[1L]] %in% valid_completion) {
+    fail(sprintf("Bulk driver produced unexpected state: %s (expected BASIC_ANALYSIS_COMPLETE or QC_REVIEW_REQUIRED)",
+          status$state[[1L]]))
   }
+  qc_table <- utils::read.delim(file.path(bulk_dir, "tables", "qc_checks.tsv"), stringsAsFactors = FALSE)
+  if (nrow(qc_table) == 0L) fail("Bulk driver did not produce QC checks table.")
 } else {
   cat("SKIP\tBulk driver optional check requires DESeq2, ggplot2, and SummarizedExperiment.\n")
+}
+
+cat("== Normalized bulk driver optional check ==\n")
+if (all(vapply(c("limma", "ggplot2", "yaml"), requireNamespace, logical(1), quietly = TRUE))) {
+  norm_dir <- file.path(scratch, "bulk_normalized_driver")
+  norm_fixture <- file.path(repo_root, "validation", "fixtures", "manifest_bulk_normalized")
+  dir.create(file.path(norm_dir, "raw"), recursive = TRUE, showWarnings = FALSE)
+  dir.create(file.path(norm_dir, "resources"), recursive = TRUE, showWarnings = FALSE)
+  invisible(file.copy(file.path(norm_fixture, "run_manifest.yaml"), file.path(norm_dir, "run_manifest.yaml"), overwrite = TRUE))
+  invisible(file.copy(file.path(norm_fixture, "raw", "counts.tsv"), file.path(norm_dir, "raw", "counts.tsv"), overwrite = TRUE))
+  invisible(file.copy(file.path(norm_fixture, "resources", "sample_mapping_reviewed.tsv"), file.path(norm_dir, "resources", "sample_mapping_reviewed.tsv"), overwrite = TRUE))
+  expect_status(
+    "Bulk normalized driver",
+    "Rscript",
+    c(file.path(script_dir, "drivers", "run_bulk_normalized.R"), file.path(norm_dir, "run_manifest.yaml")),
+    0L
+  )
+  norm_status <- utils::read.delim(file.path(norm_dir, "workflow_status.tsv"), stringsAsFactors = FALSE)
+  if (!norm_status$state[[1L]] %in% c("BASIC_ANALYSIS_COMPLETE", "QC_REVIEW_REQUIRED")) {
+    fail(sprintf("Bulk normalized driver produced unexpected state: %s", norm_status$state[[1L]]))
+  }
+} else {
+  cat("SKIP\tBulk normalized driver optional check requires limma, ggplot2, and yaml.\n")
+}
+
+cat("== Microarray driver optional check ==\n")
+if (all(vapply(c("limma", "ggplot2", "yaml", "Biobase"), requireNamespace, logical(1), quietly = TRUE))) {
+  ma_dir <- file.path(scratch, "microarray_driver")
+  ma_fixture <- file.path(repo_root, "validation", "fixtures", "manifest_microarray")
+  dir.create(file.path(ma_dir, "raw"), recursive = TRUE, showWarnings = FALSE)
+  dir.create(file.path(ma_dir, "resources"), recursive = TRUE, showWarnings = FALSE)
+  invisible(file.copy(file.path(ma_fixture, "run_manifest.yaml"), file.path(ma_dir, "run_manifest.yaml"), overwrite = TRUE))
+  invisible(file.copy(file.path(ma_fixture, "raw", "array_matrix.tsv"), file.path(ma_dir, "raw", "array_matrix.tsv"), overwrite = TRUE))
+  invisible(file.copy(file.path(ma_fixture, "resources", "sample_mapping_reviewed.tsv"), file.path(ma_dir, "resources", "sample_mapping_reviewed.tsv"), overwrite = TRUE))
+  expect_status(
+    "Microarray driver",
+    "Rscript",
+    c(file.path(script_dir, "drivers", "run_microarray.R"), file.path(ma_dir, "run_manifest.yaml")),
+    0L
+  )
+  ma_status <- utils::read.delim(file.path(ma_dir, "workflow_status.tsv"), stringsAsFactors = FALSE)
+  if (!ma_status$state[[1L]] %in% c("BASIC_ANALYSIS_COMPLETE", "QC_REVIEW_REQUIRED")) {
+    fail(sprintf("Microarray driver produced unexpected state: %s", ma_status$state[[1L]]))
+  }
+} else {
+  cat("SKIP\tMicroarray driver optional check requires limma, ggplot2, yaml, and Biobase.\n")
 }
 
 cat("== Dangerous-pattern checks ==\n")

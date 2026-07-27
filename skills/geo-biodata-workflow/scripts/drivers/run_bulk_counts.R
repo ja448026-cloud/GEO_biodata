@@ -102,12 +102,16 @@ dds <- DESeq2::DESeqDataSetFromMatrix(
 )
 dds <- dds[rowSums(DESeq2::counts(dds)) > 0L, ]
 dds <- DESeq2::estimateSizeFactors(dds)
+
+# ── Dispersion estimation with fallback ──
 dispersion_fallback <- FALSE
+dispersion_fallback_reason <- ""
 dds <- tryCatch(
   DESeq2::estimateDispersions(dds, quiet = TRUE),
   error = function(e) {
     dispersion_fallback <<- TRUE
-    message("Dispersion trend fit failed; using gene-wise dispersion estimates. Reason: ", conditionMessage(e))
+    dispersion_fallback_reason <<- conditionMessage(e)
+    message("Dispersion trend fit failed; using gene-wise dispersion estimates. Reason: ", dispersion_fallback_reason)
     fallback <- DESeq2::estimateDispersionsGeneEst(dds, quiet = TRUE)
     dispersions(fallback) <- S4Vectors::mcols(fallback)$dispGeneEst
     fallback
@@ -125,6 +129,7 @@ contrast_name <- paste(contrast$factor, contrast$numerator, "vs", contrast$denom
 de_path <- file.path(tables_dir, paste0("de_results_", contrast_name, ".tsv"))
 utils::write.table(result_df, de_path, sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
+# ── Library sizes ──
 lib_sizes <- data.frame(
   sample_id = colnames(count_mat),
   library_size = colSums(count_mat),
@@ -138,6 +143,7 @@ lib_plot <- ggplot2::ggplot(lib_sizes, ggplot2::aes(x = sample_id, y = library_s
   ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1))
 ggplot2::ggsave(file.path(figures_dir, "bulk_library_sizes.pdf"), lib_plot, width = 7, height = 4)
 
+# ── PCA ──
 transformed <- if (dispersion_fallback) {
   DESeq2::normTransform(dds)
 } else {
@@ -158,36 +164,161 @@ pca_plot <- ggplot2::ggplot(pca_df, ggplot2::aes(x = PC1, y = PC2, color = group
   ggplot2::theme_bw()
 ggplot2::ggsave(file.path(figures_dir, "bulk_pca.pdf"), pca_plot, width = 5.5, height = 4.5)
 
+# ── P-value histogram ──
 pval_df <- data.frame(pvalue = result_df$pvalue)
 pval_plot <- ggplot2::ggplot(pval_df, ggplot2::aes(x = pvalue)) +
   ggplot2::geom_histogram(bins = 30, boundary = 0, color = "white") +
   ggplot2::theme_bw()
 ggplot2::ggsave(file.path(figures_dir, paste0("bulk_pvalue_histogram_", contrast_name, ".pdf")), pval_plot, width = 5.5, height = 4)
 
+# ── QC metrics ──
+
+qc_flags <- character()
+
+# 1. Dispersion fallback check
+if (dispersion_fallback) {
+  qc_flags <- c(qc_flags, paste0("dispersion_fallback: ", dispersion_fallback_reason))
+}
+
+# 2. DE gene coverage
+n_total_genes <- nrow(result_df)
+n_non_na_pval <- sum(!is.na(result_df$pvalue))
+n_na_pval <- sum(is.na(result_df$pvalue))
+prop_na <- n_na_pval / n_total_genes
+if (prop_na > 0.5) {
+  qc_flags <- c(qc_flags, sprintf("high_NA_proportion: %.1f%% (%d/%d genes have NA p-value)", prop_na * 100, n_na_pval, n_total_genes))
+}
+if (n_non_na_pval < 100L) {
+  qc_flags <- c(qc_flags, sprintf("low_effective_genes: only %d genes with non-NA p-value", n_non_na_pval))
+}
+
+# 3. P-value distribution
+non_na_pvals <- result_df$pvalue[!is.na(result_df$pvalue)]
+if (length(non_na_pvals) >= 100L) {
+  pval_hist <- hist(non_na_pvals, breaks = 20, plot = FALSE)
+  low_pval_frac <- sum(pval_hist$counts[1:2]) / sum(pval_hist$counts)
+  if (low_pval_frac < 0.02) {
+    qc_flags <- c(qc_flags, "pvalue_distribution_uniform: very few low p-values suggest no differential signal")
+  }
+  if (sum(result_df$padj < 0.05, na.rm = TRUE) == 0L) {
+    qc_flags <- c(qc_flags, "zero_DE_genes_at_padj0.05: no gene passes FDR=5%")
+  }
+} else {
+  qc_flags <- c(qc_flags, "insufficient_pvalues_for_diagnostics")
+}
+
+# 4. Library-size outlier detection
+lib_median <- stats::median(lib_sizes$library_size)
+lib_mad <- stats::mad(lib_sizes$library_size, constant = 1L)
+lib_outliers <- character()
+if (lib_mad > 0) {
+  lib_outliers <- lib_sizes$sample_id[abs(lib_sizes$library_size - lib_median) / lib_mad > 4]
+  if (length(lib_outliers) > 0L) {
+    qc_flags <- c(qc_flags, paste0("library_size_outlier: ", paste(lib_outliers, collapse = ", ")))
+  }
+}
+
+# 5. PCA outlier detection
+pca_scores <- pca$x[, 1:min(2, ncol(pca$x)), drop = FALSE]
+pca_center <- colMeans(pca_scores)
+pca_dist <- sqrt(rowSums((pca_scores - matrix(pca_center, nrow = nrow(pca_scores), ncol = ncol(pca_scores), byrow = TRUE))^2))
+pca_mad <- stats::mad(pca_dist, constant = 1L)
+pca_center_dist <- stats::median(pca_dist) + 4 * pca_mad
+pca_outliers <- character()
+if (pca_mad > 0 && any(pca_dist > pca_center_dist)) {
+  pca_outliers <- rownames(pca_scores)[pca_dist > pca_center_dist]
+  qc_flags <- c(qc_flags, paste0("pca_outlier: ", paste(pca_outliers, collapse = ", ")))
+}
+
+# 6. Cook's distance warning
+cooks_warning <- FALSE
+if (any(grepl("cooks", tolower(names(result_df))))) {
+  cooks_col <- grep("cooks", tolower(names(result_df)), value = TRUE)[[1L]]
+  if (any(!is.na(result_df[[cooks_col]]) & result_df[[cooks_col]] > stats::qf(0.99, length(all.vars(design_formula)), ncol(count_mat) - length(all.vars(design_formula))))) {
+    cooks_warning <- TRUE
+    qc_flags <- c(qc_flags, "cooks_distance_outliers_detected")
+  }
+}
+
+qc_table <- data.frame(
+  check = c(
+    "dispersion_fallback",
+    "na_proportion",
+    "n_genes_tested",
+    "n_genes_non_na_pval",
+    "n_de_genes_padj05",
+    "pvalue_low_fraction",
+    "library_size_outliers",
+    "pca_outliers",
+    "cooks_warning"
+  ),
+  value = c(
+    as.character(dispersion_fallback),
+    sprintf("%.3f", prop_na),
+    as.character(n_total_genes),
+    as.character(n_non_na_pval),
+    as.character(sum(result_df$padj < 0.05, na.rm = TRUE)),
+    sprintf("%.3f", if (length(non_na_pvals) >= 100L) low_pval_frac else NA_real_),
+    as.character(length(lib_outliers)),
+    as.character(length(pca_outliers)),
+    as.character(cooks_warning)
+  ),
+  flag = c(
+    if (dispersion_fallback) "REVIEW" else "PASS",
+    if (prop_na > 0.5) "REVIEW" else "PASS",
+    if (n_total_genes < 100L) "REVIEW" else "PASS",
+    if (n_non_na_pval < 100L) "REVIEW" else "PASS",
+    if (sum(result_df$padj < 0.05, na.rm = TRUE) == 0L) "REVIEW" else "PASS",
+    if (length(non_na_pvals) >= 100L && low_pval_frac < 0.02) "REVIEW" else "PASS",
+    if (length(lib_outliers) > 0L) "REVIEW" else "PASS",
+    if (length(pca_outliers) > 0L) "REVIEW" else "PASS",
+    if (cooks_warning) "REVIEW" else "PASS"
+  ),
+  stringsAsFactors = FALSE
+)
+qc_table <- qc_table[qc_table$flag == "REVIEW" | qc_table$check %in% c("n_genes_tested", "n_genes_non_na_pval", "n_de_genes_padj05", "na_proportion"), ]
+utils::write.table(qc_table, file.path(tables_dir, "qc_checks.tsv"), sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+
+# ── Status determination ──
+
 critical_outputs <- c(
   file.path(tables_dir, "sample_mapping_used.tsv"),
   file.path(tables_dir, "design_matrix.tsv"),
   file.path(tables_dir, "library_sizes.tsv"),
   file.path(tables_dir, "pca_coordinates.tsv"),
+  file.path(tables_dir, "qc_checks.tsv"),
   de_path,
   file.path(figures_dir, "bulk_library_sizes.pdf"),
   file.path(figures_dir, "bulk_pca.pdf"),
   file.path(figures_dir, paste0("bulk_pvalue_histogram_", contrast_name, ".pdf"))
 )
-complete <- all(file.exists(critical_outputs) & file.info(critical_outputs)$size > 0)
+outputs_complete <- all(file.exists(critical_outputs) & file.info(critical_outputs)$size > 0)
+
+qc_pass <- length(qc_flags) == 0L
+
+if (!outputs_complete) {
+  state <- "EXECUTION_COMPLETE"
+  note <- "Bulk raw-count DESeq2 driver ran but one or more required outputs are missing or empty."
+} else if (qc_pass) {
+  state <- "BASIC_ANALYSIS_COMPLETE"
+  note <- sprintf(
+    "Bulk raw-count DESeq2 driver completed. %d genes tested, %d DE genes at padj<0.05. All QC checks passed.",
+    n_total_genes, sum(result_df$padj < 0.05, na.rm = TRUE)
+  )
+} else {
+  state <- "QC_REVIEW_REQUIRED"
+  note <- paste("QC checks flagged for review:", paste(qc_flags, collapse = "; "))
+}
+
 status <- data.frame(
-  state = if (complete) "BASIC_ANALYSIS_COMPLETE" else "QC_REVIEW_REQUIRED",
+  state = state,
   updated_at_utc = format(Sys.time(), tz = "UTC", usetz = TRUE),
-  note = if (complete) {
-    "Bulk raw-count DESeq2 driver completed required tables and diagnostic figures."
-  } else {
-    "Bulk raw-count driver ran but one or more required outputs are missing or empty."
-  },
+  note = note,
   stringsAsFactors = FALSE
 )
 utils::write.table(status, file.path(manifest_dir, "workflow_status.tsv"), sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
 session_lines <- utils::capture.output(utils::sessionInfo())
 writeLines(session_lines, file.path(logs_dir, "sessionInfo_bulk_counts.txt"), useBytes = TRUE)
-cat(status$state[[1L]], "\n", sep = "")
+cat(state, "\n", sep = "")
 cat(normalizePath(manifest_dir, winslash = "/", mustWork = TRUE), "\n", sep = "")

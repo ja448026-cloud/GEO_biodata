@@ -1,4 +1,4 @@
-schema_version: 0.1
+schema_version: 0.2
 default_profile: core
 cache_policy:
   repo_commits_raw_data: false
@@ -13,11 +13,17 @@ profiles:
       cran: [httr2, jsonlite, digest, yaml]
       bioc: [GEOquery, Biobase]
   bulk:
-    description: Bulk raw-count or normalized matrix QC, DE, and diagnostic plots.
+    description: >
+      Bulk raw-count (DESeq2), normalized-matrix (limma), and microarray (limma) QC,
+      DE, and diagnostic plots. Includes driver-specific dependencies:
+      - run_bulk_counts.R: DESeq2, SummarizedExperiment, ggplot2
+      - run_bulk_normalized.R: limma, ggplot2
+      - run_microarray.R: limma, ggplot2, Biobase
+      - bulk_limma_common.R: limma, ggplot2
     extends: [core]
     packages:
       cran: [ggplot2, pheatmap]
-      bioc: [DESeq2, edgeR, limma]
+      bioc: [DESeq2, edgeR, limma, SummarizedExperiment]
   enrichment:
     description: Preranked GSEA and over-representation analysis after a valid DE table.
     extends: [bulk]
@@ -25,8 +31,15 @@ profiles:
       cran: []
       bioc: [fgsea, clusterProfiler, msigdbr, org.Hs.eg.db, org.Mm.eg.db, ReactomePA]
   scrna:
-    description: Single-cell object intake, QC, clustering, marker diagnostics, and author-label preservation.
+    description: >
+      Single-cell object intake, QC, clustering, marker diagnostics, and author-label preservation.
+      Driver-specific dependencies:
+      - inspect_scrna_object.R: Seurat (for RDS), anndataR or zellkonverter (for H5AD),
+        SingleCellExperiment, Matrix
+      H5AD support requires at least one of: anndataR (pure R, recommended) or zellkonverter
+      (requires Python anndata). Without them, H5AD inventory falls back to error with
+      installation instructions.
     extends: [core]
     packages:
       cran: [Seurat, Matrix, patchwork, ggplot2]
-      bioc: [SingleCellExperiment, scater, scran]
+      bioc: [SingleCellExperiment, scater, scran, anndataR, zellkonverter]

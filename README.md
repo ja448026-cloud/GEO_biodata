@@ -79,11 +79,35 @@ if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocMana
 BiocManager::install(c("GEOquery", "Biobase"))
 ```
 
-Optional analysis packages:
+Profile-based installation (recommended):
+
+```r
+# Core: resource discovery and manifest validation
+Rscript skills/geo-biodata-workflow/scripts/bootstrap_environment.R --profile core --install
+
+# Bulk: DESeq2/edgeR/limma for all bulk routes
+Rscript skills/geo-biodata-workflow/scripts/bootstrap_environment.R --profile bulk --install
+
+# Enrichment: GSEA and pathway analysis
+Rscript skills/geo-biodata-workflow/scripts/bootstrap_environment.R --profile enrichment --install
+
+# scRNA: Seurat, SingleCellExperiment, and H5AD readers
+Rscript skills/geo-biodata-workflow/scripts/bootstrap_environment.R --profile scrna --install
+```
+
+Manual per-package installation:
 
 ```r
 BiocManager::install(c("limma", "edgeR", "DESeq2", "fgsea", "clusterProfiler"))
 install.packages(c("ggplot2", "pheatmap", "Seurat", "Matrix", "patchwork"))
+```
+
+H5AD support (optional — needed only for `inspect_scrna_object.R` on .h5ad files):
+
+```r
+BiocManager::install("anndataR")    # pure R, recommended
+# or
+BiocManager::install("zellkonverter")  # requires Python anndata
 ```
 
 For repeated NCBI/GEO requests, set an email address before running discovery:
@@ -264,6 +288,10 @@ geo_biodata_workflow/
         validate_manifest.R
         drivers/
           run_bulk_counts.R
+          run_bulk_normalized.R
+          run_microarray.R
+          inspect_scrna_object.R
+        bulk_limma_common.R
         analyze_bulk_template.R
         run_gsea_template.R
         analyze_scrna_template.R
@@ -348,40 +376,54 @@ When a GEO record is a SuperSeries or SubSeries, review related accessions befor
 
 The previous all-in-one bulk and scRNA templates are deprecated and fail closed. They remain in the tree as compatibility markers. Use route-specific manifest-driven drivers instead.
 
-Bulk raw-count route (`scripts/drivers/run_bulk_counts.R`):
+### Bulk raw-count route (`scripts/drivers/run_bulk_counts.R`)
 
 - `sample_mapping_used.tsv`
 - `design_matrix.tsv`
 - `library_sizes.tsv`
 - `pca_coordinates.tsv`
 - `de_results_<contrast>.tsv`
+- `qc_checks.tsv`
 - `bulk_library_sizes.pdf`
 - `bulk_pca.pdf`
-- `bulk_sample_correlation.pdf`
 - `bulk_pvalue_histogram_<contrast>.pdf`
-- `bulk_ma_<contrast>.pdf`
-- `bulk_volcano_<contrast>.pdf`
-- `bulk_top_de_heatmap_<contrast>.pdf`
 
-GSEA route:
+### Bulk normalized route (`scripts/drivers/run_bulk_normalized.R`)
+
+Uses limma via shared `bulk_limma_common.R`. For TPM, FPKM, CPM, or log-normalized matrices.
+
+- `sample_mapping_used.tsv`
+- `design_matrix.tsv`
+- `library_sizes.tsv`
+- `pca_coordinates.tsv`
+- `de_results_<contrast>.tsv`
+- `qc_checks.tsv`
+- `bulk_library_sizes.pdf`
+- `bulk_pca.pdf`
+- `bulk_pvalue_histogram_<contrast>.pdf`
+- `bulk_meanvar_<contrast>.pdf`
+
+### Microarray route (`scripts/drivers/run_microarray.R`)
+
+Uses limma via shared `bulk_limma_common.R`. Handles Series Matrix parsing, platform annotation, and probe-to-gene mapping.
+
+- Same outputs as bulk normalized, plus:
+- `probe_mapping.tsv`
+- `processing_notes.txt`
+
+### scRNA object intake (`scripts/drivers/inspect_scrna_object.R`)
+
+Read-only inventory for Seurat RDS and H5AD objects. Never modifies the original object.
+
+- `inventory.tsv`
+- `cell_metadata_fields.tsv`
+- `feature_metadata_fields.tsv`
+- `inventory_summary.md`
+
+### GSEA route
 
 - `gsea_results_<collection>.tsv`
 - `gsea_top_<collection>.pdf`
-
-scRNA route:
-
-- `cell_qc_metrics.tsv`
-- `cluster_resolution_summary.tsv`
-- `generic_marker_presence.tsv`
-- `cluster_markers.tsv`
-- `cluster_composition.tsv`
-- `scrna_qc_prefilter_<metric>.pdf`
-- `scrna_pca_elbow.pdf`
-- `scrna_umap_cluster.pdf`
-- `scrna_umap_sample.pdf`
-- `scrna_generic_marker_dotplot.pdf`
-- `scrna_marker_dotplot.pdf`
-- processed Seurat object under `derived/`
 
 ## Guardrails for agents
 

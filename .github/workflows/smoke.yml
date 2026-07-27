@@ -16,8 +16,14 @@ jobs:
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
 
-      - name: Install smoke-test dependencies
+      - name: Install smoke-test dependencies (yaml)
         run: Rscript -e 'install.packages("yaml", repos = "https://cloud.r-project.org")'
+
+      - name: Install core profile
+        run: Rscript skills/geo-biodata-workflow/scripts/bootstrap_environment.R --profile core --install
+
+      - name: Install bulk profile (limma + DESeq2 for driver checks)
+        run: Rscript skills/geo-biodata-workflow/scripts/bootstrap_environment.R --profile bulk --install
 
       - name: Run smoke checks
         run: Rscript validation/run_smoke_checks.R
