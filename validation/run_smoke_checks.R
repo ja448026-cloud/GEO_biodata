@@ -261,6 +261,60 @@ if (all(vapply(c("limma", "ggplot2", "yaml", "Biobase"), requireNamespace, logic
   cat("SKIP\tMicroarray driver optional check requires limma, ggplot2, yaml, and Biobase.\n")
 }
 
+cat("== Negative fixture checks ==\n")
+
+# raw-like mislabeled: expected fail (INPUT_SCALE_CONFLICT)
+raw_mislabel_dir <- file.path(scratch, "neg_raw_mislabel")
+dir.create(file.path(raw_mislabel_dir, "raw"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(raw_mislabel_dir, "resources"), recursive = TRUE, showWarnings = FALSE)
+neg_fixture_base <- file.path(repo_root, "validation", "fixtures", "negative")
+invisible(file.copy(file.path(neg_fixture_base, "raw_mislabeled_normalized", "run_manifest.yaml"),
+  file.path(raw_mislabel_dir, "run_manifest.yaml"), overwrite = TRUE))
+invisible(file.copy(file.path(neg_fixture_base, "raw_mislabeled_normalized", "raw", "counts.tsv"),
+  file.path(raw_mislabel_dir, "raw", "counts.tsv"), overwrite = TRUE))
+invisible(file.copy(file.path(neg_fixture_base, "raw_mislabeled_normalized", "resources", "sample_mapping_reviewed.tsv"),
+  file.path(raw_mislabel_dir, "resources", "sample_mapping_reviewed.tsv"), overwrite = TRUE))
+expect_status(
+  "Raw-count mislabeled as log_normalized failure",
+  "Rscript",
+  c(file.path(script_dir, "drivers", "run_bulk_normalized.R"), file.path(raw_mislabel_dir, "run_manifest.yaml")),
+  1L
+)
+
+# missing scale + normalized_expression + DE: expected MANIFEST_INVALID
+missing_scale_dir <- file.path(scratch, "neg_missing_scale")
+dir.create(file.path(missing_scale_dir, "raw"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(missing_scale_dir, "resources"), recursive = TRUE, showWarnings = FALSE)
+invisible(file.copy(file.path(neg_fixture_base, "missing_scale_contract", "run_manifest.yaml"),
+  file.path(missing_scale_dir, "run_manifest.yaml"), overwrite = TRUE))
+invisible(file.copy(file.path(neg_fixture_base, "missing_scale_contract", "raw", "counts.tsv"),
+  file.path(missing_scale_dir, "raw", "counts.tsv"), overwrite = TRUE))
+invisible(file.copy(file.path(neg_fixture_base, "missing_scale_contract", "resources", "sample_mapping_reviewed.tsv"),
+  file.path(missing_scale_dir, "resources", "sample_mapping_reviewed.tsv"), overwrite = TRUE))
+expect_status(
+  "Missing scale contract refusal",
+  "Rscript",
+  c(file.path(script_dir, "validate_manifest.R"), file.path(missing_scale_dir, "run_manifest.yaml")),
+  1L
+)
+
+# TPM untransformed DE
+tpm_dir <- file.path(scratch, "neg_tpm")
+dir.create(file.path(tpm_dir, "raw"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(tpm_dir, "resources"), recursive = TRUE, showWarnings = FALSE)
+invisible(file.copy(file.path(neg_fixture_base, "tpm_untransformed_de", "run_manifest.yaml"),
+  file.path(tpm_dir, "run_manifest.yaml"), overwrite = TRUE))
+invisible(file.copy(file.path(neg_fixture_base, "tpm_untransformed_de", "raw", "counts.tsv"),
+  file.path(tpm_dir, "raw", "counts.tsv"), overwrite = TRUE))
+invisible(file.copy(file.path(neg_fixture_base, "tpm_untransformed_de", "resources", "sample_mapping_reviewed.tsv"),
+  file.path(tpm_dir, "resources", "sample_mapping_reviewed.tsv"), overwrite = TRUE))
+expect_status(
+  "TPM untransformed DE refusal",
+  "Rscript",
+  c(file.path(script_dir, "validate_manifest.R"), file.path(tpm_dir, "run_manifest.yaml")),
+  1L
+)
+
 cat("== Dangerous-pattern checks ==\n")
 script_text <- unlist(lapply(list.files(script_dir, pattern = "\\.R$", full.names = TRUE, recursive = TRUE), readLines, warn = FALSE))
 dangerous_patterns <- c(

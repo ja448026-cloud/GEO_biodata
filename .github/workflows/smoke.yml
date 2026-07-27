@@ -68,6 +68,30 @@ jobs:
           cp validation/fixtures/manifest_microarray/resources/sample_mapping_reviewed.tsv /tmp/microarray_test/resources/
           Rscript skills/geo-biodata-workflow/scripts/drivers/run_microarray.R /tmp/microarray_test/run_manifest.yaml
 
+      - name: Assert bulk raw-count result
+        run: Rscript validation/assert_workflow_result.R /tmp/bulk_raw_test EXECUTION_COMPLETE --expect-outputs "de_results_,qc_checks.tsv,fallback_events.tsv"
+
+      - name: Assert bulk normalized result
+        run: Rscript validation/assert_workflow_result.R /tmp/bulk_norm_test EXECUTION_COMPLETE --expect-contract VALID --expect-outputs "de_results_,design_matrix_used.tsv,contrast_matrix_used.tsv,factor_levels_before_relevel.tsv"
+
+      - name: Negative test: raw integer mislabeled as normalized
+        run: |
+          mkdir -p /tmp/neg_raw/raw /tmp/neg_raw/resources
+          cp validation/fixtures/negative/raw_mislabeled_normalized/run_manifest.yaml /tmp/neg_raw/
+          cp validation/fixtures/negative/raw_mislabeled_normalized/raw/counts.tsv /tmp/neg_raw/raw/
+          cp validation/fixtures/negative/raw_mislabeled_normalized/resources/sample_mapping_reviewed.tsv /tmp/neg_raw/resources/
+          Rscript skills/geo-biodata-workflow/scripts/drivers/run_bulk_normalized.R /tmp/neg_raw/run_manifest.yaml 2>&1 | grep -q "INPUT_SCALE_CONFLICT" && echo "PASS: raw-like mislabeled correctly blocked" && exit 0
+          echo "FAIL: raw-like mislabeled was not blocked" && exit 1
+
+      - name: Negative test: missing scale contract
+        run: |
+          mkdir -p /tmp/neg_scale/raw /tmp/neg_scale/resources
+          cp validation/fixtures/negative/missing_scale_contract/run_manifest.yaml /tmp/neg_scale/
+          cp validation/fixtures/negative/missing_scale_contract/raw/counts.tsv /tmp/neg_scale/raw/
+          cp validation/fixtures/negative/missing_scale_contract/resources/sample_mapping_reviewed.tsv /tmp/neg_scale/resources/
+          Rscript skills/geo-biodata-workflow/scripts/validate_manifest.R /tmp/neg_scale/run_manifest.yaml && echo "FAIL: missing scale not rejected" && exit 1
+          echo "PASS: missing scale correctly rejected" && exit 0
+
   scrna:
     runs-on: ubuntu-latest
     needs: [core]
@@ -88,6 +112,48 @@ jobs:
 
       - name: Parse scRNA intake driver
         run: Rscript -e 'parse(file = "skills/geo-biodata-workflow/scripts/drivers/inspect_scrna_object.R")'
+
+      - name: Generate tiny Seurat RDS fixture and run inventory
+        run: |
+          Rscript -e '
+            library(SeuratObject)
+            set.seed(42)
+            counts <- Matrix::Matrix(matrix(rpois(2000, lambda = 2), nrow = 100, ncol = 20), sparse = TRUE)
+            rownames(counts) <- paste0("Gene", 1:100)
+            colnames(counts) <- paste0("Cell", 1:20)
+            meta <- data.frame(
+              cell_type = sample(c("T_cell", "B_cell", "Monocyte"), 20, replace = TRUE),
+              donor = rep(c("D1", "D2"), each = 10),
+              condition = rep(c("treated", "control"), 10),
+              row.names = colnames(counts)
+            )
+            seu <- CreateSeuratObject(counts = counts, meta.data = meta)
+            seu <- RenameCells(seu, new.names = colnames(counts))
+            saveRDS(seu, "/tmp/tiny_seurat.rds")
+            cat("Seurat RDS created:", file.info("/tmp/tiny_seurat.rds")$size, "bytes\n")
+          '
+
+          mkdir -p /tmp/scrnainv_test
+          cat > /tmp/scrnainv_test/run_manifest.yaml << 'MANIFEST'
+          accession: GSE999999
+          route: scrna_author_object
+          input:
+            file: /tmp/tiny_seurat.rds
+            input_type: author_seurat
+            location_type: local
+            species: human
+          review:
+            mode: manual
+            input_type_confirmed: true
+            sample_mapping_confirmed: true
+            design_confirmed: true
+            contrast_confirmed: true
+          MANIFEST
+
+          Rscript skills/geo-biodata-workflow/scripts/drivers/inspect_scrna_object.R /tmp/scrnainv_test/run_manifest.yaml
+
+      - name: Assert scRNA inventory result
+        run: Rscript validation/assert_workflow_result.R /tmp/scrnainv_test OBJECT_INVENTORY_COMPLETE --expect-inventory OBJECT_INVENTORY_COMPLETE --expect-outputs "inventory.tsv,cell_metadata_fields.tsv,inventory_summary.md"
 
       - name: Verify no dangerous patterns in scRNA driver
         run: |

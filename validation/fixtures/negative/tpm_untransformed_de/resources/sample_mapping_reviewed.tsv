@@ -1,0 +1,5 @@
+sample_id	group	batch
+S1	control	A
+S2	control	B
+S3	treatment	A
+S4	treatment	B

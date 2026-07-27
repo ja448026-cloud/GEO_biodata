@@ -15,6 +15,26 @@ route_ontology:
     requires_design: false
     requires_contrast: false
     content_checks: [matrix_columns_match_sample_mapping, finite_values]
+    conditional_requirements:
+      - condition:
+          analysis.intent: differential_expression
+        requires_design: true
+        requires_contrast: true
+        required_scale_fields: [transformed, transform, evidence_source]
+        scale_value_rules:
+          - field: transformed
+            must_equal: true
+            applies_when:
+              input_type: log_normalized
+          - field: transform
+            must_start_with: log
+            applies_when:
+              input_type: [tpm, fpkm, cpm]
+      - condition:
+          analysis.intent: eda_only
+        requires_design: false
+        requires_contrast: false
+        required_scale_fields: []
   microarray_series_matrix:
     input_types: [expression_set, series_matrix, microarray_intensity]
     requires_input_file: true

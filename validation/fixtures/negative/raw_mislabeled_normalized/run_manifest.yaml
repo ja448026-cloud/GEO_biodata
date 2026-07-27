@@ -1,0 +1,30 @@
+accession: GSE123456
+route: bulk_normalized
+input:
+  file: raw/counts.tsv
+  input_type: log_normalized
+  location_type: local
+  species: human
+  scale:
+    transformed: true
+    transform: log2
+    pseudocount: 1
+    evidence_source: publication_methods
+sample_mapping:
+  file: resources/sample_mapping_reviewed.tsv
+  biological_unit: sample
+  sample_id_column: sample_id
+  group_column: group
+design:
+  formula: "~ batch + group"
+  contrast:
+    factor: group
+    numerator: treatment
+    denominator: control
+review:
+  input_type_confirmed: true
+  sample_mapping_confirmed: true
+  design_confirmed: true
+  contrast_confirmed: true
+analysis:
+  intent: differential_expression
