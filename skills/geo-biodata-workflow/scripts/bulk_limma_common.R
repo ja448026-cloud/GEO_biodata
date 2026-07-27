@@ -132,12 +132,17 @@ align_samples <- function(mat, sample_map, sample_id_col, contrast_factor = NULL
   sample_map <- sample_map[match(sample_ids, sample_map[[sample_id_col]]), , drop = FALSE]
   rownames(sample_map) <- sample_ids
 
-  # Ensure contrast factor is a factor with explicit levels
-  if (!is.factor(sample_map[[contrast_factor]])) {
-    sample_map[[contrast_factor]] <- factor(sample_map[[contrast_factor]])
+  # Ensure contrast factor is a factor with explicit levels (only when specified)
+  if (!is.null(contrast_factor)) {
+    if (!contrast_factor %in% names(sample_map)) {
+      stop("contrast_factor '", contrast_factor, "' not found in sample mapping.", call. = FALSE)
+    }
+    if (!is.factor(sample_map[[contrast_factor]])) {
+      sample_map[[contrast_factor]] <- factor(sample_map[[contrast_factor]])
+    }
   }
 
-  list(matrix = mat, metadata = sample_map)
+  list(matrix = mat, metadata = sample_map, contrast_factor = contrast_factor)
 }
 
 # ── Scale contract validation ────────────────────────────────────────────────
@@ -256,6 +261,7 @@ run_limma_de <- function(mat, sample_map, design_formula, contrast) {
     design = design,
     contrast_matrix = contrast_matrix,
     contrast_name = contrast_name,
+    sample_map_used = sample_map,
     factor_levels_before = prep$levels_before,
     factor_levels_after = prep$levels_after,
     factor_reference = prep$reference
@@ -528,15 +534,31 @@ run_limma_qc <- function(fit_result, mat, sample_map, contrast_factor) {
 
 # ── Status determination (with split dimensions) ─────────────────────────────
 
+write_output_integrity <- function(output_paths, tables_dir) {
+  info <- file.info(output_paths)
+  df <- data.frame(
+    path = output_paths,
+    exists = file.exists(output_paths),
+    size_bytes = ifelse(file.exists(output_paths), info$size, NA_integer_),
+    required = TRUE,
+    status = ifelse(file.exists(output_paths) & info$size > 0, "OK", "MISSING_OR_EMPTY"),
+    stringsAsFactors = FALSE
+  )
+  utils::write.table(df, file.path(tables_dir, "output_integrity.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+  df
+}
+
 determine_limma_status <- function(output_paths, qc_result, fallback_events) {
   outputs_complete <- all(file.exists(output_paths) & file.info(output_paths)$size > 0)
 
   if (!outputs_complete) {
     return(list(
-      execution_state = "EXECUTION_COMPLETE",
+      execution_state = "EXECUTION_FAILED",
+      contract_state = "VALID",
       technical_qc = "NOT_ASSESSED",
       result_signal = "NOT_ASSESSED",
-      note = "Limma driver ran but one or more required outputs are missing or empty."
+      note = "Required outputs are missing or empty."
     ))
   }
 

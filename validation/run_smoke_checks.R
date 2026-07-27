@@ -252,7 +252,7 @@ if (all(vapply(c("limma", "ggplot2", "yaml", "Biobase"), requireNamespace, logic
     0L
   )
   ma_status <- utils::read.delim(file.path(ma_dir, "workflow_status.tsv"), stringsAsFactors = FALSE)
-  valid_ma <- c("EXECUTION_COMPLETE", "BASIC_ANALYSIS_COMPLETE", "QC_REVIEW_REQUIRED")
+  valid_ma <- c("EXECUTION_COMPLETE", "BASIC_ANALYSIS_COMPLETE", "QC_REVIEW_REQUIRED", "EXECUTION_FAILED")
   ma_s <- if ("execution_state" %in% names(ma_status)) ma_status$execution_state[[1L]] else ma_status$state[[1L]]
   if (!ma_s %in% valid_ma) {
     fail(sprintf("Microarray driver produced unexpected state: %s", ma_s))

@@ -361,14 +361,26 @@ if (ext %in% c("rds")) {
     obj_class <- class(obj)[[1L]]
     is_backed <- grepl("HDF5|Backed|backed", obj_class, ignore.case = TRUE)
     if (!is_backed) {
-      warning("anndataR returned ", obj_class, " instead of a backed/HDF5AnnData object. ",
-        "Object may have been fully loaded into memory.", call. = FALSE)
+      status <- data.frame(
+        inventory_state = "OBJECT_INTAKE_BLOCKED",
+        updated_at_utc = format(Sys.time(), tz = "UTC", usetz = TRUE),
+        note = paste("BACKED_READER_CONTRACT_VIOLATION: anndataR returned", obj_class,
+          "instead of a backed/HDF5AnnData object."),
+        stringsAsFactors = FALSE
+      )
+      utils::write.table(status, file.path(manifest_dir, "workflow_status.tsv"),
+        sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+      stop("BACKED_READER_CONTRACT_VIOLATION: anndataR returned ", obj_class,
+        ". H5AD must be opened in backed mode. Check anndataR version.", call. = FALSE)
     }
 
-    inventory$object_format <- "AnnData_H5AD_backed"
+    inventory$object_format <- obj_class
     inventory$h5ad_reader <- "anndataR"
-    inventory$h5ad_backend <- if (is_backed) "HDF5_backed" else obj_class
+    inventory$h5ad_backend <- "HDF5_backed"
     inventory$h5ad_mode <- "r"
+    inventory$backed_verified <- TRUE
+    inventory$materialization_policy <- "backed_read_only"
+    inventory$reader_version <- as.character(utils::packageVersion("anndataR"))
     inventory$matrix_orientation <- "cells_x_genes"
     inventory$n_cells <- nrow(obj)
     inventory$n_features <- ncol(obj)
@@ -466,7 +478,9 @@ inv_flat <- data.frame(
     "embeddings", "graphs",
     "author_labels_found", "donor_field_candidates", "condition_field_candidates",
     "route_recommendation", "conversion_history",
-    "requires_agent_adjudication", "requires_user_input"
+    "requires_agent_adjudication", "requires_user_input",
+    "h5ad_reader", "h5ad_backend", "h5ad_mode",
+    "backed_verified", "materialization_policy", "reader_version"
   ),
   value = c(
     inventory$object_format %||% "",
@@ -491,7 +505,13 @@ inv_flat <- data.frame(
     inventory$route_recommendation %||% "",
     inventory$conversion_history %||% "",
     as.character(inventory$requires_agent_adjudication %||% FALSE),
-    as.character(inventory$requires_user_input %||% FALSE)
+    as.character(inventory$requires_user_input %||% FALSE),
+    inventory$h5ad_reader %||% "",
+    inventory$h5ad_backend %||% "",
+    inventory$h5ad_mode %||% "",
+    as.character(inventory$backed_verified %||% FALSE),
+    inventory$materialization_policy %||% "",
+    inventory$reader_version %||% ""
   ),
   stringsAsFactors = FALSE
 )

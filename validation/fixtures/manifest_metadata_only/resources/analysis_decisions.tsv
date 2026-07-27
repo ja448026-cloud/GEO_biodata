@@ -1,2 +1,2 @@
-decision_id	decision_type	selected_value	alternative_values	evidence_sources	source_tier	supporting_text	conflicting_evidence	confidence	decision_rule	agent_model	retrieved_at_utc	requires_user_input
-GSE123456_route_candidate_001	route_candidate	metadata_only		gds_assay_type	public_metadata	No analysis-ready matrix confirmed		0.8	test_rule	rules_only	2026-07-27 00:00:00 UTC	FALSE
+decision_id	decision_type	selected_value	alternative_values	evidence_sources	source_tier	supporting_text	conflicting_evidence	confidence	decision_rule	agent_model	retrieved_at_utc	requires_user_input	conflict_status	decided_at
+GSE123456_route_candidate_001	route_candidate	metadata_only		gds_assay_type	public_metadata	No analysis-ready matrix confirmed		0.8	bulk_input_scale_v0.1	rules_only	2026-07-27 00:00:00 UTC	FALSE	none	2026-07-27 00:00:01 UTC

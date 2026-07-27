@@ -231,6 +231,14 @@ if (!nzchar(detected_platforms) && length(detected_from_input) > 0L) {
   if (nzchar(detected_platforms) && is.null(platform_info)) {
     platform_info <- resolve_platform(detected_platforms, platform_registry)
   }
+} else if (nzchar(detected_platforms) && length(detected_from_input) > 0L) {
+  # Conflict check: manifest GPL vs input header GPL
+  header_platforms <- detected_from_input
+  if (!identical(detected_platforms, header_platforms[[1L]])) {
+    stop("PLATFORM_CONFLICT: manifest declares GPL=", detected_platforms,
+      " but input header has GPL=", paste(header_platforms, collapse = ","),
+      ". Resolve the mismatch before analysis.", call. = FALSE)
+  }
 }
 
 writeLines(c("Sample data processing notes from input:", processing_notes),
@@ -386,7 +394,7 @@ result_df <- fit_result$result
 outputs <- write_limma_outputs(result_df, fit_result$ebayes_fit,
   fit_result$design, fit_result$contrast_matrix,
   contrast_factor, contrast$numerator, contrast$denominator,
-  sample_map, mat_filtered,
+  fit_result$sample_map_used, mat_filtered,
   fit_result$factor_levels_before, fit_result$factor_levels_after, fit_result$factor_reference,
   tables_dir, figures_dir, logs_dir)
 

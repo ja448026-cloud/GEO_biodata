@@ -275,12 +275,42 @@ if (identical(manifest$review$mode %||% "", "agent_adjudicated")) {
     if (is.null(decision) || nrow(decision) == 0L) {
       add_error("analysis_decisions.tsv is empty or unreadable.")
     } else {
-      # Required columns
-      required_cols <- c("selected_value", "confidence", "source_tier",
-        "decision_rule", "requires_user_input", "conflicting_evidence")
-      missing_cols <- setdiff(required_cols, names(decision))
-      if (length(missing_cols) > 0L) {
-        add_error("analysis_decisions missing required columns: ", paste(missing_cols, collapse = ", "))
+      # Required columns (with aliases)
+      required_map <- list(
+        selected_value = c("selected_value"),
+        confidence = c("confidence"),
+        source_tier = c("source_tier"),
+        decision_rule = c("decision_rule"),
+        requires_user_input = c("requires_user_input"),
+        conflict_status = c("conflict_status"),
+        evidence_sources = c("evidence_sources"),
+        retrieved_at = c("retrieved_at", "retrieved_at_utc"),
+        decided_at = c("decided_at")
+      )
+      for (col_name in names(required_map)) {
+        found <- any(required_map[[col_name]] %in% names(decision))
+        if (!found) {
+          add_error("analysis_decisions missing required column: ", col_name,
+            " (accepted: ", paste(required_map[[col_name]], collapse = ", "), ")")
+        }
+      }
+
+      # Multi-row: select the correct row by decision_type or decision_id
+      if (nrow(decision) > 1L) {
+        target_id <- manifest$review$decision_id %||% ""
+        if (nzchar(target_id) && "decision_id" %in% names(decision)) {
+          decision <- decision[decision$decision_id == target_id, , drop = FALSE]
+          if (nrow(decision) == 0L) {
+            add_error("analysis_decisions has no row with decision_id '", target_id, "'.")
+          }
+        } else if ("decision_type" %in% names(decision)) {
+          sel <- decision[grepl("route", tolower(decision$decision_type)), , drop = FALSE]
+          if (nrow(sel) == 0L) sel <- decision  # fallback: use first row
+          decision <- sel[1L, , drop = FALSE]
+        }
+      }
+      if (nrow(decision) == 0L) {
+        add_error("analysis_decisions could not resolve a valid decision row.")
       }
 
       # selected_value must match manifest route
@@ -310,14 +340,15 @@ if (identical(manifest$review$mode %||% "", "agent_adjudicated")) {
         }
       }
 
-      # Conflicting evidence must be resolved (hard error)
-      if ("conflicting_evidence" %in% names(decision)) {
-        conflicts <- decision$conflicting_evidence[[1L]]
-        if (!is.null(conflicts) && !is.na(conflicts) &&
-            nzchar(as.character(conflicts)) &&
-            !grepl("resolved", tolower(as.character(conflicts)))) {
-          add_error("analysis_decisions has unresolved conflicting_evidence.")
+      # Conflict status must be structured (none/resolved/unresolved)
+      if ("conflict_status" %in% names(decision)) {
+        cs <- tolower(as.character(decision$conflict_status[[1L]] %||% ""))
+        if (!cs %in% c("none", "resolved")) {
+          add_error("analysis_decisions conflict_status must be 'none' or 'resolved', got: ", cs)
         }
+      } else if ("conflicting_evidence" %in% names(decision)) {
+        # Legacy: structured conflict_status column is required
+        add_error("analysis_decisions missing required column: conflict_status. Add conflict_status: none|resolved|unresolved.")
       }
 
       # Source tier must be in registry (hard error)
@@ -334,20 +365,38 @@ if (identical(manifest$review$mode %||% "", "agent_adjudicated")) {
         }
       }
 
-      # Decision rule must not be rules_only (hard error)
+      # Decision rule must exist in knowledge/decision_rules/
       if ("decision_rule" %in% names(decision)) {
         dr <- decision$decision_rule[[1L]] %||% ""
         if (!nzchar(dr) || grepl("^rules_only", dr)) {
-          add_error("decision_rule is empty or 'rules_only' — agent adjudication is required when using agent_adjudicated mode.")
+          add_error("decision_rule is empty or 'rules_only'.")
+        }
+        # Verify rule exists in decision_rules directory
+        rules_dir <- find_repo_file(c(getwd(), manifest_dir, script_dir), file.path("knowledge", "decision_rules"))
+        if (!is.na(rules_dir)) {
+          rule_files <- list.files(rules_dir, pattern = "\\.yaml$", full.names = TRUE, recursive = TRUE)
+          rule_ids <- character()
+          for (rf in rule_files) {
+            ry <- tryCatch(yaml::read_yaml(rf), error = function(e) NULL)
+            if (!is.null(ry$rule_id)) rule_ids <- c(rule_ids, ry$rule_id)
+          }
+          if (length(rule_ids) > 0L && !dr %in% rule_ids) {
+            add_error("decision_rule '", dr, "' not found in knowledge/decision_rules/.")
+          }
         }
       }
 
-      # Timestamp must exist and be after discovery
-      if ("retrieved_at" %in% names(decision) || "retrieved_at_utc" %in% names(decision)) {
-        ts_col <- intersect(c("retrieved_at", "retrieved_at_utc"), names(decision))[[1L]]
-        if (!nzchar(as.character(decision[[ts_col]][[1L]] %||% ""))) {
-          add_error("Decision record has empty timestamp in column: ", ts_col)
-        }
+      # Timestamps: must be parseable and decided_at >= retrieved_at
+      parse_ts <- function(val) {
+        if (is.null(val) || is.na(val) || !nzchar(as.character(val))) return(NA_real_)
+        as.numeric(tryCatch(as.POSIXct(val, tz = "UTC"), error = function(e) NA_real_))
+      }
+      ret_ts <- parse_ts(decision$retrieved_at[[1L]] %||% decision$retrieved_at_utc[[1L]])
+      dec_ts <- parse_ts(decision$decided_at[[1L]])
+      if (is.na(ret_ts) && is.na(dec_ts)) {
+        add_error("analysis_decisions has unparseable or missing timestamps.")
+      } else if (!is.na(ret_ts) && !is.na(dec_ts) && dec_ts < ret_ts) {
+        add_error("analysis_decisions decided_at is before retrieved_at.")
       }
     }
   }

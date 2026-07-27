@@ -229,7 +229,7 @@ result_df <- fit_result$result
 outputs <- write_limma_outputs(result_df, fit_result$ebayes_fit,
   fit_result$design, fit_result$contrast_matrix,
   contrast_factor, contrast$numerator, contrast$denominator,
-  sample_map, mat_filtered,
+  fit_result$sample_map_used, mat_filtered,
   fit_result$factor_levels_before, fit_result$factor_levels_after, fit_result$factor_reference,
   tables_dir, figures_dir, logs_dir)
 
