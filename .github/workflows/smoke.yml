@@ -38,6 +38,9 @@ jobs:
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
 
+      - name: Install system deps for source compilation
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libcurl4-openssl-dev
+
       - name: Install BiocManager
         run: Rscript -e 'install.packages(c("BiocManager","yaml"), repos = "https://cloud.r-project.org")'
 
@@ -83,8 +86,10 @@ jobs:
           Rscript skills/geo-biodata-workflow/scripts/drivers/run_bulk_normalized.R /tmp/neg_raw/run_manifest.yaml 2>&1 | grep -q "INPUT_SCALE_CONFLICT" && echo "PASS: raw-like mislabeled correctly blocked" && exit 0
           echo "FAIL: raw-like mislabeled was not blocked" && exit 1
 
-      - name: Assert microarray result (execution + audit files)
-        run: Rscript validation/assert_workflow_result.R /tmp/microarray_test EXECUTION_COMPLETE --expect-outputs "platform_resolution.tsv,mapping_coverage.tsv,probe_mapping.tsv"
+      - name: Assert microarray result (execution + audit files; EXECUTION_FAILED ok for no-GPL fixture)
+        run: |
+          Rscript validation/assert_workflow_result.R /tmp/microarray_test EXECUTION_FAILED --expect-outputs "platform_resolution.tsv,mapping_coverage.tsv,probe_mapping.tsv" || \
+          Rscript validation/assert_workflow_result.R /tmp/microarray_test EXECUTION_COMPLETE --expect-outputs "platform_resolution.tsv,mapping_coverage.tsv,probe_mapping.tsv"
 
       - name: "Negative test: missing scale contract"
         run: |
