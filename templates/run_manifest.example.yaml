@@ -1,0 +1,30 @@
+accession: GSE123456
+route: bulk_raw_counts
+
+input:
+  file: raw/counts.tsv.gz
+  input_type: raw_integer_counts
+  gene_id_type: ensembl_gene_id
+  species: human
+
+sample_mapping:
+  file: resources/sample_mapping_reviewed.tsv
+  biological_unit: patient
+  sample_id_column: sample_id
+  group_column: group
+
+design:
+  formula: "~ batch + group"
+  contrast:
+    factor: group
+    numerator: treatment
+    denominator: control
+
+review:
+  input_type_confirmed: true
+  sample_mapping_confirmed: true
+  design_confirmed: true
+  contrast_confirmed: true
+
+limits:
+  max_memory_gb: 32

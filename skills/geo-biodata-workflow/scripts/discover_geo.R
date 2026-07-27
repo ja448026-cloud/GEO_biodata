@@ -460,6 +460,99 @@ utils::write.table(
   sep = "\t", quote = FALSE, row.names = FALSE, na = ""
 )
 
+# ── Routing evidence ─────────────────────────────────────────────────────
+
+evidence_rows <- list()
+add_evidence <- function(candidate_route, source, value, weight, supports, conflicts, confidence, review_required, note) {
+  evidence_rows[[length(evidence_rows) + 1L]] <<- data.frame(
+    candidate_route = candidate_route,
+    evidence_source = source,
+    evidence_value = value,
+    evidence_weight = weight,
+    supports = supports,
+    conflicts = conflicts,
+    confidence = confidence,
+    review_required = review_required,
+    note = note,
+    stringsAsFactors = FALSE
+  )
+}
+
+if (nzchar(assay_str)) {
+  add_evidence(
+    routing$recommended_route,
+    "gds_assay_type",
+    routing$assay_type,
+    0.35,
+    TRUE,
+    FALSE,
+    if (routing$recommended_route == "review_metadata") 0.3 else 0.65,
+    routing$recommended_route == "review_metadata",
+    "GDS assay type is useful for broad routing but does not prove input scale or sample mapping."
+  )
+}
+if (identical(characteristics_status, "OK") && nrow(characteristics) > 0L) {
+  add_evidence(
+    routing$recommended_route,
+    "sample_characteristics",
+    paste0(nrow(characteristics), " characteristic entries"),
+    0.25,
+    TRUE,
+    FALSE,
+    0.55,
+    TRUE,
+    "Sample characteristics exist, but biological groups and units still require review."
+  )
+} else {
+  add_evidence(
+    "review_metadata",
+    "sample_characteristics",
+    characteristics_status,
+    0.3,
+    FALSE,
+    TRUE,
+    0.8,
+    TRUE,
+    "Missing, skipped, or empty sample characteristics prevent fully automatic analysis routing."
+  )
+}
+if (identical(supplements_status, "OK") && nrow(supplements) > 0L) {
+  supplement_text <- paste(tolower(supplements$file_name), collapse = " ")
+  if (grepl("barcodes|features|matrix\\.mtx|filtered_feature_bc_matrix|10x", supplement_text)) {
+    add_evidence("scrna_raw_counts", "supplement_filenames", supplement_text, 0.45, TRUE, FALSE, 0.75, TRUE, "10x-style filenames suggest scRNA counts; object content still needs inspection.")
+  }
+  if (grepl("h5ad|seurat|rds|rdata", supplement_text)) {
+    add_evidence("scrna_author_object", "supplement_filenames", supplement_text, 0.4, TRUE, FALSE, 0.65, TRUE, "Author object filenames require inspection of raw-count layers and metadata.")
+  }
+  if (grepl("count|counts|matrix|expression|series", supplement_text)) {
+    add_evidence("bulk_counts_or_normalized", "supplement_filenames", supplement_text, 0.3, TRUE, FALSE, 0.5, TRUE, "Expression-like filenames do not prove raw counts versus normalized values.")
+  }
+} else {
+  add_evidence("review_metadata", "supplements", supplements_status, 0.2, FALSE, FALSE, 0.4, TRUE, "No downloadable supplement evidence was available from GEO series-level listing.")
+}
+if (superseries_warning) {
+  add_evidence(
+    "review_metadata",
+    "series_relation",
+    series_relation,
+    0.6,
+    FALSE,
+    TRUE,
+    0.9,
+    TRUE,
+    "SuperSeries/SubSeries records require choosing the analysis unit before download or analysis."
+  )
+}
+if (length(evidence_rows) == 0L) {
+  add_evidence("review_metadata", "none", "no routing evidence generated", 0, FALSE, FALSE, 0, TRUE, "Review GEO page manually.")
+}
+routing_evidence <- do.call(rbind, evidence_rows)
+utils::write.table(
+  routing_evidence,
+  file.path(resources_dir, "routing_evidence.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+)
+
 # ── Status ───────────────────────────────────────────────────────────────
 
 now_utc <- format(Sys.time(), tz = "UTC", usetz = TRUE)
@@ -548,6 +641,7 @@ summary_lines <- c(
   "- `resources/supplement_index.tsv` — GEO supplementary file listing",
   "- `resources/publication_links.tsv` — publication identifiers and open-access URLs",
   "- `resources/routing_hint.tsv` — automatically inferred assay type and route",
+  "- `resources/routing_evidence.tsv` — evidence rows behind route candidates",
   "- `resources/sra_links.tsv` — SRA/BioProject links for raw-data handoff",
   "- `workflow_events.tsv` — warnings and partial-failure events recorded during discovery",
   "",

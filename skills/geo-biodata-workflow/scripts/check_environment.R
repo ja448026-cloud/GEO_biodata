@@ -5,19 +5,19 @@ output_file <- if (length(args) >= 1L) args[[1L]] else "environment.tsv"
 
 packages <- data.frame(
   package = c(
-    "GEOquery", "Biobase", "httr2", "jsonlite", "digest",
+    "GEOquery", "Biobase", "httr2", "jsonlite", "digest", "yaml",
     "limma", "edgeR", "DESeq2", "ggplot2", "pheatmap",
     "fgsea", "clusterProfiler", "msigdbr",
     "Seurat", "Matrix", "patchwork"
   ),
   capability = c(
-    "core", "core", "core", "core", "core",
+    "core", "core", "core", "core", "core", "core",
     "bulk", "bulk", "bulk", "figures", "figures",
     "gsea", "gsea", "gsea",
     "scrna", "scrna", "figures"
   ),
   required = c(
-    TRUE, TRUE, TRUE, TRUE, TRUE,
+    TRUE, TRUE, TRUE, TRUE, TRUE, TRUE,
     FALSE, FALSE, FALSE, FALSE, FALSE,
     FALSE, FALSE, FALSE,
     FALSE, FALSE, FALSE

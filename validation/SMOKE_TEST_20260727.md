@@ -64,6 +64,23 @@ Validation after plan-first hardening:
 - Live lightweight discovery smoke with `GSE2553 --no-characteristics`: PASS.
 - The lightweight smoke wrote `REVIEW_REQUIRED`, recorded `sample_characteristics=SKIPPED`, and preserved the route hint `bulk_microarray` without expression-data download.
 
+## Manifest Alignment Hardening
+
+The next-round Codex alignment added an analysis-readiness gate without claiming that route-specific bulk or scRNA drivers are complete.
+
+Accepted changes:
+
+- Added `schemas/run_manifest.schema.yaml` and `templates/run_manifest.example.yaml`.
+- Added `validate_manifest.R`, which validates route/input compatibility, required review gates, sample mapping fields, design formula fields, contrast levels, duplicate sample IDs, and design-matrix rank when sample metadata are available.
+- `discover_geo.R` now writes `resources/routing_evidence.tsv` so route hints are auditable evidence rather than implicit permission to analyze.
+- Deprecated `analyze_bulk_template.R` and `analyze_scrna_template.R` now fail closed instead of running risky all-in-one analysis logic.
+- Added a minimal GitHub Actions smoke workflow.
+- `validation/run_smoke_checks.R` now also validates a fixed manifest fixture, rejects an unconfirmed review gate, and scans for legacy dangerous patterns.
+
+Validation after manifest alignment:
+
+- `validation/run_smoke_checks.R`: PASS, including parse checks for all 10 R scripts and manifest validation gates.
+
 ## Boundary
 
-This smoke test validates the environment, skill structure, public-resource discovery, output creation, and download guards. It does not claim biological validity for bulk DE, GSEA, or scRNA clustering. Those templates remain lightweight workflow aids that require accession-specific metadata review.
+This smoke test validates the environment, skill structure, public-resource discovery, output creation, manifest validation, and download guards. It does not claim biological validity for bulk DE, GSEA, or scRNA clustering. The old all-in-one bulk and scRNA templates are deprecated and fail closed until route-specific manifest-driven drivers are implemented.

@@ -16,6 +16,7 @@ Keep deterministic operations as small scripts:
 - GEO metadata and supplement discovery;
 - publication supplement lookup;
 - reviewable download plans, selective download, and hashes;
+- manifest validation before analysis;
 - optional templates for bulk expression, GSEA, and scRNA first-pass analysis.
 
 Keep method judgment as short references:
@@ -53,6 +54,7 @@ Do not include:
 |---|---|---|
 | GEO discovery | metadata, GSM index, supplements, publication links | GEOquery, httr2 |
 | Resource collection | reviewed download plan, manifest, hashes | GEOquery, digest |
+| Analysis readiness | run manifest validation and review gates | yaml |
 | Bulk expression | QC, PCA, correlation, DE, heatmap/MA/volcano | limma, DESeq2, edgeR |
 | Enrichment | ranked-list GSEA and guidance for GO/KEGG/Reactome/MSigDB | fgsea, clusterProfiler |
 | scRNA | QC metrics, clustering, UMAP, markers, author-label comparison | Seurat |
@@ -65,6 +67,9 @@ Do not include:
 - The README explains the one-accession workflow without overstating automation.
 - The workflow stops explicitly when metadata or inputs are insufficient.
 - Download transfer requires a route-specific plan and reviewed file rows.
+- Statistical analysis requires a validated `run_manifest.yaml`.
+- Deprecated all-in-one analysis templates fail closed until route-specific drivers are implemented.
+- CI runs deterministic smoke checks for parseability, guards, manifest validation, and public-tree hygiene.
 - The skill can be installed by another agent without hidden local context.
 
 ## Later Work

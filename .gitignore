@@ -1,5 +1,7 @@
 runs/
 validation/runs/
+validation/fixtures/**/manifest_validation.tsv
+validation/fixtures/**/workflow_status.tsv
 .Rhistory
 .RData
 .Rproj.user/

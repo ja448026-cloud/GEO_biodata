@@ -50,7 +50,23 @@ The downloader should transfer only rows where both `selected=TRUE` and `reviewe
 - Prefer author metadata and supplementary tables over inferred file-name parsing.
 - If multiple processed resources disagree, stop at `REVIEW_REQUIRED` and document the conflict.
 
-## 5. Resource priority
+## 5. Manifest before analysis
+
+`routing_hint.tsv` and `routing_evidence.tsv` are advisory. They must not directly trigger statistical analysis.
+
+Before analysis, create `run_manifest.yaml` and validate it with `scripts/validate_manifest.R`. The manifest must explicitly record:
+
+- route and input type;
+- species and gene ID type when known;
+- reviewed sample mapping file;
+- biological unit;
+- design formula;
+- structured contrast;
+- confirmed review gates.
+
+If the manifest is not `MANIFEST_VALIDATED`, stop before differential analysis, clustering, or enrichment.
+
+## 6. Resource priority
 
 1. GEO series and GSM characteristics.
 2. Supplementary sample or cell metadata tables.
@@ -61,7 +77,7 @@ The downloader should transfer only rows where both `selected=TRUE` and `reviewe
 
 Never replace original labels. Store `author_label`, `harmonized_label`, `label_source`, `confidence`, and `review_note`.
 
-## 6. Recommended public components
+## 7. Recommended public components
 
 - GEO access and supplements: [GEOquery](https://bioconductor.org/packages/GEOquery/)
 - Raw accession/FASTQ handoff: [nf-core/fetchngs](https://nf-co.re/fetchngs/latest/)

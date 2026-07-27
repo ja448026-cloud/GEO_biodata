@@ -94,6 +94,53 @@ expect_status(
   1L
 )
 
+cat("== Manifest validation checks ==\n")
+manifest_fixture <- file.path(repo_root, "validation", "fixtures", "manifest_valid", "run_manifest.yaml")
+expect_status(
+  "Valid manifest",
+  "Rscript",
+  c(file.path(script_dir, "validate_manifest.R"), manifest_fixture),
+  0L
+)
+
+invalid_dir <- file.path(scratch, "manifest_invalid")
+dir.create(invalid_dir, recursive = TRUE, showWarnings = FALSE)
+invalid_manifest <- file.path(invalid_dir, "run_manifest.yaml")
+valid_text <- readLines(manifest_fixture, warn = FALSE)
+invalid_text <- sub("input_type_confirmed: true", "input_type_confirmed: false", valid_text, fixed = TRUE)
+writeLines(invalid_text, invalid_manifest, useBytes = TRUE)
+dir.create(file.path(invalid_dir, "resources"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(invalid_dir, "raw"), recursive = TRUE, showWarnings = FALSE)
+invisible(file.copy(
+  file.path(dirname(manifest_fixture), "resources", "sample_mapping_reviewed.tsv"),
+  file.path(invalid_dir, "resources", "sample_mapping_reviewed.tsv"),
+  overwrite = TRUE
+))
+invisible(file.copy(
+  file.path(dirname(manifest_fixture), "raw", "counts.tsv"),
+  file.path(invalid_dir, "raw", "counts.tsv"),
+  overwrite = TRUE
+))
+expect_status(
+  "Unconfirmed manifest review gate refusal",
+  "Rscript",
+  c(file.path(script_dir, "validate_manifest.R"), invalid_manifest),
+  1L
+)
+
+cat("== Dangerous-pattern checks ==\n")
+script_text <- unlist(lapply(list.files(script_dir, pattern = "\\.R$", full.names = TRUE), readLines, warn = FALSE))
+dangerous_patterns <- c(
+  "max\\(vals.*<\\s*50",
+  "as\\.matrix\\(counts_raw\\)",
+  "state\\s*=\\s*\"BASIC_ANALYSIS_COMPLETE\""
+)
+for (pattern in dangerous_patterns) {
+  if (any(grepl(pattern, script_text))) {
+    fail(paste("Dangerous legacy pattern is still present:", pattern))
+  }
+}
+
 cat("== Public tree path scan ==\n")
 all_files <- list.files(repo_root, all.files = TRUE, recursive = TRUE, full.names = TRUE, no.. = TRUE)
 text_files <- all_files[file.info(all_files)$isdir == FALSE]

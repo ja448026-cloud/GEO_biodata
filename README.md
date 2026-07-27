@@ -8,8 +8,9 @@ Give an agent one GEO Series accession such as `GSE000000`; the project guides i
 2. GEO metadata and resource discovery;
 3. publication and supplementary-material lookup;
 4. selective download of reviewed files;
-5. basic bulk transcriptome or single-cell analysis when inputs support it;
-6. minimal diagnostic figures, tables, logs, and a clear stop state.
+5. manifest validation before analysis;
+6. basic analysis only after route-specific drivers and review gates support it;
+7. diagnostic tables, logs, and a clear stop state.
 
 This is not a new bioinformatics framework and not a full R package. It is a reusable execution path over established tools such as GEOquery, limma, DESeq2, edgeR, fgsea, clusterProfiler, and Seurat.
 
@@ -20,7 +21,7 @@ Many GEO studies already provide processed matrices, Seurat/H5AD objects, sample
 The core idea is:
 
 ```text
-GSE accession -> resource inventory -> input routing -> selective download -> basic analysis or explicit stop state
+GSE accession -> resource inventory -> input routing -> selective download -> manifest validation -> basic analysis or explicit stop state
 ```
 
 ## What this project provides
@@ -32,7 +33,8 @@ GSE accession -> resource inventory -> input routing -> selective download -> ba
   - publication supplement lookup;
   - reviewable download-plan generation;
   - guarded GEO supplementary-file download;
-  - lightweight bulk, GSEA, and scRNA analysis templates.
+  - manifest validation before analysis;
+  - a lightweight GSEA template plus deprecated fail-closed bulk/scRNA compatibility markers.
 - Short reference notes for common decisions:
   - input routing;
   - bulk expression and DE/GSEA rules;
@@ -47,14 +49,11 @@ Included:
 - GEO/GSM metadata and sample-characteristics extraction.
 - GEO supplementary-file index and selective download.
 - Publication identifiers and open-resource links where available.
-- Bulk RNA-seq, expression matrix, or microarray first-pass QC.
-- Basic differential expression with an input-appropriate route:
-  - DESeq2 for raw integer counts;
-  - limma for normalized or microarray-style matrices;
-  - edgeR guidance for dataset-specific drivers.
+- Manifest-driven readiness checks for bulk RNA-seq, expression matrix, microarray, and scRNA routes.
+- Deprecated all-in-one bulk/scRNA scripts that fail closed until route-specific drivers are implemented.
 - Basic preranked GSEA with `fgsea`.
 - GO/KEGG/Reactome/MSigDB enrichment guidance.
-- Basic scRNA-seq QC metrics, clustering, UMAP, marker discovery, author-label comparison, and generic marker-panel diagnostics.
+- Single-cell QC, clustering, author-object review, and marker diagnostics as route-specific design guidance.
 
 Not included:
 
@@ -70,7 +69,7 @@ Not included:
 Minimum R packages for resource discovery:
 
 ```r
-install.packages(c("httr2", "jsonlite", "digest"))
+install.packages(c("httr2", "jsonlite", "digest", "yaml"))
 if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
 BiocManager::install(c("GEOquery", "Biobase"))
 ```
@@ -120,6 +119,7 @@ runs/GSE000000/resources/sample_index.tsv
 runs/GSE000000/resources/sample_characteristics.tsv
 runs/GSE000000/resources/supplement_index.tsv
 runs/GSE000000/resources/routing_hint.tsv
+runs/GSE000000/resources/routing_evidence.tsv
 runs/GSE000000/resources/publication_links.tsv
 runs/GSE000000/resources/sra_links.tsv
 runs/GSE000000/workflow_events.tsv
@@ -141,6 +141,14 @@ Rscript skills/geo-biodata-workflow/scripts/download_geo_supp.R `
 ```
 
 The plan generator and downloader intentionally refuse unrestricted patterns such as `.*`. The downloader also refuses selected rows that have not been reviewed. This prevents accidental downloads of every supplementary file in a large GEO record.
+
+Before analysis, create and validate a manifest:
+
+```powershell
+Copy-Item templates\run_manifest.example.yaml runs\GSE000000\run_manifest.yaml
+# Edit run_manifest.yaml so input files, sample mapping, route, design, and contrast are explicit.
+Rscript skills\geo-biodata-workflow/scripts/validate_manifest.R runs/GSE000000/run_manifest.yaml
+```
 
 ## Typical agent prompt
 
@@ -168,7 +176,7 @@ Expected behavior:
    - raw-only handoff.
 6. Generate a download plan, review it, and download only `reviewed=TRUE` route-relevant files.
 7. Preserve raw downloads unchanged and record hashes.
-8. Run only basic QC/analysis supported by the reviewed input.
+8. Create `run_manifest.yaml` and validate it before any statistical analysis.
 9. Save status, summary, scripts, tables, figures, logs, and session information.
 
 ## Skill installation
@@ -201,9 +209,16 @@ The public project name is `geo_biodata_workflow`. The installable skill id is `
 
 ```text
 geo_biodata_workflow/
+  .github/
+    workflows/
+      smoke.yml
   AGENTS.md
   README.md
   PUBLIC_MVP_PLAN.md
+  schemas/
+    run_manifest.schema.yaml
+  templates/
+    run_manifest.example.yaml
   skills/
     geo-biodata-workflow/
       SKILL.md
@@ -221,13 +236,16 @@ geo_biodata_workflow/
         collect_publication_supplements.R
         generate_download_plan.R
         download_geo_supp.R
+        validate_manifest.R
         analyze_bulk_template.R
         run_gsea_template.R
         analyze_scrna_template.R
         marker_utilities.R
   validation/
+    fixtures/
     SMOKE_TEST_20260727.md
     expected_download_refusal.log
+    run_smoke_checks.R
 ```
 
 Generated data and analysis outputs should be written under `runs/` and kept out of Git. `validation/runs/` is reserved for maintainer smoke tests and should not contain committed data.
@@ -246,6 +264,7 @@ Each GEO accession should produce a self-contained run directory:
     publication_links.tsv
     publication_supplements.tsv
     routing_hint.tsv
+    routing_evidence.tsv
     sra_links.tsv
   plans/
     download_plan.tsv
@@ -257,6 +276,7 @@ Each GEO accession should produce a self-contained run directory:
   logs/
   scripts/
   environment.tsv
+  manifest_validation.tsv
   workflow_status.tsv
   workflow_events.tsv
   summary.md
@@ -271,6 +291,8 @@ Every figure should have a source script and either a source table or a document
 | `DISCOVERY_PARTIAL` | Public-resource discovery ran, but one or more discovery steps failed or returned incomplete metadata |
 | `RESOURCE_INVENTORY_COMPLETE` | GEO/public resources were collected; analysis has not started |
 | `REVIEW_REQUIRED` | Human review is needed for sample characteristics, SuperSeries/SubSeries relationships, metadata, QC thresholds, labels, or conflicting resources |
+| `MANIFEST_VALIDATED` | Input, route, sample mapping, design, contrast, and review gates passed structural validation |
+| `MANIFEST_INVALID` | Manifest validation failed; analysis must not run |
 | `READY_FOR_BASIC_ANALYSIS` | Inputs and metadata support one basic route |
 | `BASIC_ANALYSIS_COMPLETE` | Required tables, figures, logs, and status exist |
 | `BLOCKED_INPUT` | No supported processed input is available |
@@ -293,6 +315,8 @@ Do not silently turn a blocked state into an analysis result.
 When a GEO record is a SuperSeries or SubSeries, review related accessions before choosing the analysis unit.
 
 ## Basic analysis outputs
+
+The previous all-in-one bulk and scRNA templates are deprecated and fail closed. They remain in the tree as compatibility markers while route-specific manifest-driven drivers are developed. Do not use them as automatic entry points.
 
 Bulk route:
 
@@ -355,7 +379,9 @@ The smoke test verifies:
 - skill folder structure;
 - R script parseability;
 - GEO discovery without expression-data download;
-- guarded refusal of unrestricted supplementary download;
+- guarded refusal of unrestricted supplementary download and unreviewed download plans;
+- manifest validation success and failure gates;
+- absence of deprecated dangerous analysis patterns;
 - absence of local/private path strings in the public project tree.
 
 It does not validate biological conclusions for any specific GEO dataset.

@@ -1,0 +1,56 @@
+schema_version: 0.2
+required_top_level:
+  - accession
+  - route
+  - input
+  - sample_mapping
+  - design
+  - review
+allowed_routes:
+  bulk_raw_counts:
+    input_types:
+      - raw_integer_counts
+  bulk_normalized:
+    input_types:
+      - log_normalized
+      - normalized_expression
+      - tpm
+      - fpkm
+      - cpm
+  microarray_series_matrix:
+    input_types:
+      - expression_set
+      - series_matrix
+      - microarray_intensity
+  scrna_raw_counts:
+    input_types:
+      - mtx_counts
+      - h5_counts
+      - count_bearing_h5ad
+      - count_bearing_seurat
+  scrna_author_object:
+    input_types:
+      - author_h5ad
+      - author_seurat
+      - author_processed_object
+required_review_flags:
+  - input_type_confirmed
+  - sample_mapping_confirmed
+  - design_confirmed
+  - contrast_confirmed
+required_input_fields:
+  - file
+  - input_type
+  - species
+required_sample_mapping_fields:
+  - file
+  - biological_unit
+  - sample_id_column
+  - group_column
+required_design_fields:
+  - formula
+  - contrast
+required_contrast_fields:
+  - factor
+  - numerator
+  - denominator
