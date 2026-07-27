@@ -62,6 +62,19 @@ required_input_fields:
   - location_type
   - species
 
+optional_scale_fields:
+  - transformed
+  - transform
+  - pseudocount
+  - evidence_source
+  - evidence_note
+
+analysis_fields:
+  intent:
+    description: analysis intent for normalized/microarray routes
+    allowed_values: [eda_only, differential_expression]
+    default: differential_expression
+
 allowed_location_types:
   - local
   - remote

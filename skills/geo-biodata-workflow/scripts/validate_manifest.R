@@ -238,6 +238,92 @@ if (identical(location_type, "local") && nzchar(input_path) && file.exists(input
   }
 }
 
+# ── Scale contract validation ────────────────────────────────────────────────
+if (route %in% c("bulk_normalized", "microarray_series_matrix")) {
+  scale_config <- manifest$input$scale %||% list()
+  analysis_intent <- manifest$analysis$intent %||% "differential_expression"
+
+  if (!analysis_intent %in% c("eda_only", "differential_expression")) {
+    add_warning("analysis.intent should be 'eda_only' or 'differential_expression', got: ", analysis_intent)
+  }
+
+  if (route == "bulk_normalized") {
+    input_type <- manifest$input$input_type %||% ""
+    if (identical(input_type, "normalized_expression") &&
+        !isTRUE(scale_config$evidence_source) && !nzchar(scale_config$evidence_source %||% "")) {
+      add_warning("normalized_expression without scale evidence: only EDA is safe. Set analysis.intent=eda_only or provide input.scale.evidence_source.")
+    }
+    if (identical(input_type, "tpm") &&
+        (!isTRUE(scale_config$transformed) || !nzchar(scale_config$transform %||% ""))) {
+      add_warning("TPM without confirmed log-transform: limma DE may be inappropriate. Set input.scale.transformed=true and input.scale.transform.")
+    }
+  }
+}
+
+# ── Agent adjudication gate ──────────────────────────────────────────────────
+decision_path <- file.path(manifest_dir, "resources", "analysis_decisions.tsv")
+if (file.exists(decision_path)) {
+  decision <- tryCatch(
+    utils::read.delim(decision_path, stringsAsFactors = FALSE, check.names = FALSE),
+    error = function(e) NULL
+  )
+  if (!is.null(decision) && nrow(decision) > 0L) {
+    # Verify selected route matches manifest
+    if ("selected_value" %in% names(decision)) {
+      if (decision$selected_value[[1L]] != route) {
+        add_error("analysis_decisions selected_value '", decision$selected_value[[1L]],
+          "' does not match manifest route '", route, "'.")
+      }
+    }
+    # requires_user_input must be FALSE for automatic analysis
+    if ("requires_user_input" %in% names(decision)) {
+      if (isTRUE(decision$requires_user_input[[1L]]) || identical(tolower(as.character(decision$requires_user_input[[1L]])), "true")) {
+        add_error("analysis_decisions requires_user_input is TRUE; manual review required before analysis.")
+      }
+    }
+    # Confidence threshold
+    autonomy <- manifest$autonomy$mode %||% "balanced"
+    min_confidence <- switch(autonomy, conservative = 0.90, balanced = 0.75, autonomous = 0.60)
+    if ("confidence" %in% names(decision)) {
+      dec_conf <- as.numeric(decision$confidence[[1L]])
+      if (!is.na(dec_conf) && dec_conf < min_confidence) {
+        add_error(sprintf("Decision confidence %.2f below autonomy mode '%s' threshold %.2f.",
+          dec_conf, autonomy, min_confidence))
+      }
+    }
+    # Conflicting evidence must be empty or resolved
+    if ("conflicting_evidence" %in% names(decision)) {
+      conflicts <- decision$conflicting_evidence[[1L]]
+      if (!is.null(conflicts) && !is.na(conflicts) &&
+          nzchar(as.character(conflicts)) &&
+          !grepl("resolved", tolower(as.character(conflicts)))) {
+        add_error("analysis_decisions has unresolved conflicting_evidence: ", as.character(conflicts))
+      }
+    }
+    # Source tier minimum
+    if ("source_tier" %in% names(decision)) {
+      source_registry <- find_repo_file(c(getwd(), manifest_dir, script_dir), file.path("knowledge", "source_registry.yaml"))
+      valid_tiers <- if (!is.na(source_registry)) {
+        src <- yaml::read_yaml(source_registry)
+        names(src$source_tiers) %||% character()
+      } else {
+        c("author_processed_matrix", "geo_sample_metadata", "publication_supplement", "filename_hint", "raw_accession", "public_metadata")
+      }
+      if (!decision$source_tier[[1L]] %in% valid_tiers) {
+        add_warning("analysis_decisions source_tier '", decision$source_tier[[1L]], "' not in registered tiers: ",
+          paste(valid_tiers, collapse = ", "))
+      }
+    }
+    # Decision rule must exist
+    if ("decision_rule" %in% names(decision)) {
+      dr <- decision$decision_rule[[1L]]
+      if (!nzchar(dr %||% "") || grepl("^rules_only", dr)) {
+        add_warning("decision_rule is empty or 'rules_only'; agent adjudication may be incomplete.")
+      }
+    }
+  }
+}
+
 out_dir <- dirname(manifest_path)
 status <- if (length(errors) == 0L) "MANIFEST_VALIDATED" else "MANIFEST_INVALID"
 validation <- data.frame(

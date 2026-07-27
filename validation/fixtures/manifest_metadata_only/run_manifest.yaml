@@ -13,4 +13,4 @@ review:
   evidence_threshold_passed: true
 
 autonomy:
-  mode: conservative
+  mode: balanced

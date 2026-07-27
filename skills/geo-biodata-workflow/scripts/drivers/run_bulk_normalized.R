@@ -4,7 +4,7 @@
 # Manifest-driven limma DE driver for bulk_normalized route.
 # Accepts: log_normalized, normalized_expression, tpm, fpkm, cpm
 # Rejects: raw_integer_counts (use run_bulk_counts.R instead)
-# Does NOT use DESeq2 or voom — data is already normalized.
+# Enforces input scale contract: unknown scale => EDA only; raw-like => fail closed.
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 1L) {
@@ -39,7 +39,7 @@ limma_common <- file.path(script_dir, "bulk_limma_common.R")
 if (!file.exists(limma_common)) stop("Could not find bulk_limma_common.R.", call. = FALSE)
 source(limma_common)
 
-# Validate manifest before proceeding
+# Validate manifest
 validator <- file.path(script_dir, "validate_manifest.R")
 if (!file.exists(validator)) stop("Could not find validate_manifest.R.", call. = FALSE)
 validation_output <- system2("Rscript", c(shQuote(validator), shQuote(manifest_path)),
@@ -75,6 +75,12 @@ contrast <- manifest$design$contrast
 contrast_factor <- contrast$factor
 design_formula <- stats::as.formula(manifest$design$formula)
 
+# Scale contract
+scale_config <- manifest$input$scale %||% list(transformed = FALSE, transform = "", evidence_source = "")
+
+# Analysis intent
+analysis_intent <- manifest$analysis$intent %||% "differential_expression"
+
 # Setup output directories
 tables_dir <- file.path(manifest_dir, "tables")
 figures_dir <- file.path(manifest_dir, "figures")
@@ -83,6 +89,9 @@ for (path in c(tables_dir, figures_dir, logs_dir)) {
   if (!dir.exists(path)) dir.create(path, recursive = TRUE, showWarnings = FALSE)
 }
 
+# Init fallback events
+fallback_events <- init_fallback_events()
+
 # Load data
 mat <- read_matrix_input(input_path)
 sample_map <- read_sample_mapping(sample_path, sample_id_col, contrast_factor)
@@ -90,13 +99,30 @@ aligned <- align_samples(mat, sample_map, sample_id_col)
 mat <- aligned$matrix
 sample_map <- aligned$metadata
 
-# Reject raw-count data: if values look integer-like and non-negative, warn
-if (all(mat >= 0) && all(abs(mat - round(mat)) < 1e-8, na.rm = TRUE)) {
-  int_ratio <- sum(abs(mat - round(mat)) < 1e-8, na.rm = TRUE) / length(mat)
-  if (int_ratio > 0.95) {
-    message("NOTE: input matrix appears integer-like (", round(int_ratio * 100),
-      "%). If these are raw counts, use route bulk_raw_counts with run_bulk_counts.R instead.")
-  }
+# Validate scale contract
+scale_check <- validate_scale_contract(input_type, scale_config, mat)
+
+if (!scale_check$allow_de && identical(analysis_intent, "differential_expression")) {
+  writeLines(c(
+    "Scale contract blocks DE:",
+    paste("-", scale_check$conditions),
+    "",
+    "Set analysis.intent: eda_only to proceed without DE, or provide scale evidence."
+  ), file.path(logs_dir, "scale_blocked.txt"), useBytes = TRUE)
+
+  status <- data.frame(
+    execution_state = "EXECUTION_COMPLETE",
+    technical_qc = "BLOCKED",
+    result_signal = "NOT_ASSESSED",
+    updated_at_utc = format(Sys.time(), tz = "UTC", usetz = TRUE),
+    note = paste("DE blocked by scale contract:", paste(scale_check$conditions, collapse = "; ")),
+    stringsAsFactors = FALSE
+  )
+  utils::write.table(status, file.path(manifest_dir, "workflow_status.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+
+  cat("BLOCKED\n", normalizePath(manifest_dir, winslash = "/", mustWork = TRUE), "\n", sep = "")
+  quit(status = 0L)
 }
 
 # Write sample mapping
@@ -111,20 +137,29 @@ message(sprintf("Genes after low-expression filter: %d / %d", nrow(mat_filtered)
 fit_result <- run_limma_de(mat_filtered, sample_map, design_formula, contrast)
 result_df <- fit_result$result
 
-# Write outputs
-outputs <- write_limma_outputs(result_df, fit_result$ebayes_fit, contrast_factor,
-  contrast$numerator, contrast$denominator,
+# Write outputs (with design and contrast_matrix from fit_result)
+outputs <- write_limma_outputs(result_df, fit_result$ebayes_fit,
+  fit_result$design, fit_result$contrast_matrix,
+  contrast_factor, contrast$numerator, contrast$denominator,
   sample_map, mat_filtered, tables_dir, figures_dir, logs_dir)
 
-# QC checks
+# QC checks (split technical vs signal)
 qc <- run_limma_qc(fit_result, mat_filtered, sample_map, contrast_factor)
 utils::write.table(qc$qc_table, file.path(tables_dir, "qc_checks.tsv"),
   sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
-# Determine status
+# Write fallback events
+if (nrow(fallback_events) > 0L) {
+  utils::write.table(fallback_events, file.path(tables_dir, "fallback_events.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+}
+
+# Determine status with split dimensions
 critical_outputs <- c(
   file.path(tables_dir, "sample_mapping_used.tsv"),
-  file.path(tables_dir, "design_matrix.tsv"),
+  file.path(tables_dir, "design_matrix_used.tsv"),
+  file.path(tables_dir, "contrast_matrix_used.tsv"),
+  file.path(tables_dir, "factor_levels_used.tsv"),
   file.path(tables_dir, "library_sizes.tsv"),
   file.path(tables_dir, "pca_coordinates.tsv"),
   file.path(tables_dir, "qc_checks.tsv"),
@@ -135,12 +170,12 @@ critical_outputs <- c(
   file.path(figures_dir, paste0("bulk_meanvar_", outputs["contrast_name"], ".pdf"))
 )
 
-n_total <- nrow(result_df)
-n_de <- sum(result_df$adj.P.Val < 0.05, na.rm = TRUE)
-status_out <- determine_limma_status(critical_outputs, qc$qc_flags, n_total, n_de)
+status_out <- determine_limma_status(critical_outputs, qc, fallback_events)
 
 status <- data.frame(
-  state = status_out$state,
+  execution_state = status_out$execution_state,
+  technical_qc = status_out$technical_qc,
+  result_signal = status_out$result_signal,
   updated_at_utc = format(Sys.time(), tz = "UTC", usetz = TRUE),
   note = status_out$note,
   stringsAsFactors = FALSE
@@ -151,5 +186,5 @@ utils::write.table(status, file.path(manifest_dir, "workflow_status.tsv"),
 session_lines <- utils::capture.output(utils::sessionInfo())
 writeLines(session_lines, file.path(logs_dir, "sessionInfo_bulk_normalized.txt"), useBytes = TRUE)
 
-cat(status_out$state, "\n", sep = "")
+cat(status_out$execution_state, "\n", sep = "")
 cat(normalizePath(manifest_dir, winslash = "/", mustWork = TRUE), "\n", sep = "")

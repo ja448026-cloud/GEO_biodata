@@ -2,9 +2,9 @@
 #
 # run_microarray.R
 # Manifest-driven limma DE driver for microarray_series_matrix route.
-# Handles: Series Matrix files, ExpressionSet (RDS), tabular intensity matrices.
-# Performs: platform annotation, probe-to-gene mapping, duplicate probe aggregation,
-#           then limma DE via bulk_limma_common.R.
+# Handles: Series Matrix files (.txt/.txt.gz), ExpressionSet (RDS), tabular intensity matrices.
+# Uses knowledge/platform_registry.tsv for annotation lookup.
+# Supports: probe-level DE (no mapping), gene-level DE (with mapping), coverage gates.
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 1L) {
@@ -33,6 +33,21 @@ script_path <- if (length(file_arg) > 0L) {
 driver_dir <- dirname(script_path)
 script_dir <- normalizePath(file.path(driver_dir, ".."), winslash = "/", mustWork = TRUE)
 manifest_dir <- dirname(normalizePath(manifest_path, winslash = "/", mustWork = TRUE))
+
+# Find repo root for platform registry
+find_repo_root <- function(dirs) {
+  for (start_dir in dirs) {
+    current <- normalizePath(start_dir, winslash = "/", mustWork = FALSE)
+    for (i in seq_len(10L)) {
+      if (file.exists(file.path(current, "knowledge", "platform_registry.tsv"))) return(current)
+      parent <- dirname(current)
+      if (identical(parent, current)) break
+      current <- parent
+    }
+  }
+  stop("Could not find knowledge/platform_registry.tsv from: ", paste(dirs, collapse = ", "), call. = FALSE)
+}
+repo_root <- find_repo_root(c(script_dir, manifest_dir, getwd()))
 
 # Source shared limma functions
 limma_common <- file.path(script_dir, "bulk_limma_common.R")
@@ -75,13 +90,12 @@ contrast <- manifest$design$contrast
 contrast_factor <- contrast$factor
 design_formula <- stats::as.formula(manifest$design$formula)
 
-# Optional: platform annotation path in manifest
+# Platform: from manifest or auto-detect
 platform_id <- manifest$input$platform_id %||% ""
-probe_map_path <- if (!is.null(manifest$input$probe_map_file) && nzchar(manifest$input$probe_map_file %||% "")) {
+probe_map_path <- if (!is.null(manifest$input$probe_map_file) &&
+  nzchar(manifest$input$probe_map_file %||% "")) {
   resolve_manifest_path(manifest$input$probe_map_file)
-} else {
-  ""
-}
+} else ""
 
 tables_dir <- file.path(manifest_dir, "tables")
 figures_dir <- file.path(manifest_dir, "figures")
@@ -90,11 +104,62 @@ for (path in c(tables_dir, figures_dir, logs_dir)) {
   if (!dir.exists(path)) dir.create(path, recursive = TRUE, showWarnings = FALSE)
 }
 
+fallback_events <- init_fallback_events()
+
+# ── Platform registry lookup ──────────────────────────────────────────────────
+
+load_platform_registry <- function(repo_root) {
+  reg_path <- file.path(repo_root, "knowledge", "platform_registry.tsv")
+  if (!file.exists(reg_path)) {
+    stop("Platform registry not found: ", reg_path, call. = FALSE)
+  }
+  utils::read.delim(reg_path, stringsAsFactors = FALSE, check.names = FALSE)
+}
+
+resolve_platform <- function(gpl_id, registry) {
+  # Only use registry lookup — no paste0(GPL, ".db") guessing
+  if (!nzchar(gpl_id)) return(NULL)
+
+  entry <- registry[registry$gpl_id == gpl_id, , drop = FALSE]
+  if (nrow(entry) == 0L) {
+    warning("GPL ", gpl_id, " not found in platform_registry.tsv. ",
+      "Add it before using this platform for gene-level analysis.", call. = FALSE)
+    return(NULL)
+  }
+  as.list(entry[1L, ])
+}
+
+platform_registry <- load_platform_registry(repo_root)
+platform_info <- NULL
+
+# Detect platforms from input
+detected_platforms <- platform_id %||% ""
+
+if (length(detected_platforms) > 1L) {
+  stop("Multi-platform GSE detected: ", paste(detected_platforms, collapse = ", "),
+    ". Multi-platform analysis requires per-platform splitting. ",
+    "Process each platform separately with its own manifest.",
+    call. = FALSE)
+}
+
+if (nzchar(detected_platforms)) {
+  platform_info <- resolve_platform(detected_platforms, platform_registry)
+}
+
+# Write platform resolution
+if (!is.null(platform_info)) {
+  utils::write.table(
+    as.data.frame(platform_info, stringsAsFactors = FALSE),
+    file.path(tables_dir, "platform_resolution.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+  )
+}
+
 # ── Input parsing ────────────────────────────────────────────────────────────
 
 parse_series_matrix <- function(path) {
-  # Parse a GEO Series Matrix file: header lines starting with ! then data
-  con <- file(path, "r")
+  # Support both .txt and .txt.gz
+  con <- if (grepl("\\.gz$", path)) gzfile(path, "r") else file(path, "r")
   on.exit(close(con))
   header <- list()
   lines <- readLines(con, warn = FALSE)
@@ -123,115 +188,129 @@ parse_series_matrix <- function(path) {
   }
   rownames(mat) <- feature_ids
   mat <- mat[, -1L, drop = FALSE]
-  # Extract sample data processing notes
-  processing_notes <- header[["Sample_data_processing"]] %||% "not_provided"
-  # Extract platform IDs
-  platform_ids <- header[["Series_platform_id"]] %||% character()
   storage.mode(mat) <- "numeric"
+  platform_from_header <- header[["Series_platform_id"]] %||% character()
   list(
     matrix = as.matrix(mat),
     header = header,
-    processing_notes = processing_notes,
-    platform_ids = platform_ids
+    processing_notes = paste(header[["Sample_data_processing"]] %||% "not_provided", collapse = "; "),
+    platform_ids = as.character(platform_from_header)
   )
 }
 
 parse_expression_set <- function(path) {
-  if (!requireNamespace("Biobase", quietly = TRUE)) stop("Biobase is required for ExpressionSet input.", call. = FALSE)
   eset <- readRDS(path)
-  if (!inherits(eset, "ExpressionSet")) stop("File is not an ExpressionSet object.", call. = FALSE)
+  if (!inherits(eset, "ExpressionSet")) stop("File is not an ExpressionSet.", call. = FALSE)
   mat <- Biobase::exprs(eset)
-  pdata <- Biobase::pData(eset)
-  fdata <- Biobase::fData(eset)
   list(
     matrix = mat,
-    phenotype_data = pdata,
-    feature_data = fdata,
-    processing_notes = if ("data_processing" %in% names(Biobase::experimentData(eset)@other)) {
-      Biobase::experimentData(eset)@other[["data_processing"]]
-    } else {
-      "not_provided"
-    },
+    processing_notes = "not_provided",
     platform_ids = as.character(unique(Biobase::annotation(eset)))
   )
 }
 
-# Load input
 input_data <- switch(input_type,
   series_matrix = parse_series_matrix(input_path),
   expression_set = parse_expression_set(input_path),
-  microarray_intensity = list(matrix = read_matrix_input(input_path), processing_notes = "not_provided", platform_ids = character()),
+  microarray_intensity = list(matrix = read_matrix_input(input_path),
+    processing_notes = "not_provided", platform_ids = character()),
   stop("Unsupported input_type: ", input_type, call. = FALSE)
 )
 
 mat <- input_data$matrix
 processing_notes <- input_data$processing_notes %||% "not_provided"
-platform_ids <- input_data$platform_ids %||% character()
 
-# Log processing notes for audit
-if (length(processing_notes) > 0L) {
-  writeLines(c("Sample data processing notes from input:", processing_notes),
-    file.path(logs_dir, "processing_notes.txt"), useBytes = TRUE)
+# Detect platforms from input if not explicitly set
+detected_from_input <- input_data$platform_ids %||% character()
+if (!nzchar(detected_platforms) && length(detected_from_input) > 0L) {
+  if (length(detected_from_input) > 1L) {
+    stop("Multi-platform input: ", paste(detected_from_input, collapse = ", "),
+      ". Split by platform before analysis.", call. = FALSE)
+  }
+  detected_platforms <- detected_from_input[[1L]]
+  if (nzchar(detected_platforms) && is.null(platform_info)) {
+    platform_info <- resolve_platform(detected_platforms, platform_registry)
+  }
 }
+
+writeLines(c("Sample data processing notes from input:", processing_notes),
+  file.path(logs_dir, "processing_notes.txt"), useBytes = TRUE)
 
 message(sprintf("Input matrix: %d probes x %d samples", nrow(mat), ncol(mat)))
-if (length(platform_ids) > 0L) {
-  message("Platform(s): ", paste(platform_ids, collapse = ", "))
-}
 
-# ── Platform annotation and probe-to-gene mapping ────────────────────────────
+# ── Probe-to-gene mapping ────────────────────────────────────────────────────
 
-probe_to_gene <- function(mat, platform, probe_map_file = "") {
-  # Returns gene-level matrix. Priority: user file > Bioc annotation package > fail
+probe_to_gene <- function(mat, platform_info, probe_map_file, fallback_events) {
   probe_gene_map <- NULL
+  mapping_method <- "none"
+  annotation_pkg <- platform_info$annotation_package %||% ""
+  mapping_status_info <- platform_info$mapping_status %||% "unknown"
+
+  if (identical(mapping_status_info, "no_mapping_needed")) {
+    return(list(matrix = mat, mapping_method = "none_needed",
+      coverage_pct = 100, warnings = character()))
+  }
+
+  if (!nzchar(annotation_pkg) && !nzchar(probe_map_file)) {
+    fallback_events <- log_fallback(fallback_events,
+      "probe_to_gene", "probe_id_used",
+      "platform annotation missing",
+      "gene_symbol_mapping", "probe_id_as_feature",
+      "DE results use probe IDs; gene-level interpretation is not supported.",
+      requires_review = TRUE)
+    return(list(matrix = mat, mapping_method = "probe_id_only",
+      coverage_pct = 0, warnings = "No gene-level annotation available. Results are probe-level.",
+      fallback_events = fallback_events))
+  }
 
   if (nzchar(probe_map_file) && file.exists(probe_map_file)) {
     probe_gene_map <- utils::read.delim(probe_map_file, stringsAsFactors = FALSE, check.names = FALSE)
-    if (ncol(probe_gene_map) < 2L) stop("Probe map file must have at least 2 columns (probe_id, gene_symbol).", call. = FALSE)
     colnames(probe_gene_map)[1:2] <- c("probe_id", "gene_symbol")
-  } else if (nzchar(platform) && length(platform) > 0L) {
-    platform_pkg <- paste0(platform, ".db")
-    if (requireNamespace(platform_pkg, quietly = TRUE)) {
-      pkg_env <- asNamespace(platform_pkg)
-      probe_gene_map <- tryCatch({
-        AnnotationDbi::select(
-          getExportedValue(platform_pkg, platform_pkg),
-          keys = rownames(mat),
-          columns = "SYMBOL",
-          keytype = "PROBEID"
-        )
-      }, error = function(e) NULL)
-      if (!is.null(probe_gene_map)) {
-        colnames(probe_gene_map)[1:2] <- c("probe_id", "gene_symbol")
-      }
+    mapping_method <- "user_provided_map"
+  } else if (nzchar(annotation_pkg)) {
+    if (!requireNamespace(annotation_pkg, quietly = TRUE)) {
+      fallback_events <- log_fallback(fallback_events,
+        "probe_to_gene", "annotation_pkg_missing",
+        paste("package", annotation_pkg, "not installed"),
+        "Bioconductor annotation package", "probe_id_as_feature",
+        paste("Annotation package", annotation_pkg, "not available. Results are probe-level."),
+        requires_review = TRUE)
+      return(list(matrix = mat, mapping_method = "probe_id_only",
+        coverage_pct = 0, warnings = paste("Package", annotation_pkg, "not installed."),
+        fallback_events = fallback_events))
     }
-  }
-
-  if (is.null(probe_gene_map) || nrow(probe_gene_map) == 0L) {
-    warning("No probe-to-gene annotation available. Using probe IDs as gene-level features. ",
-      "Set platform_id in manifest or provide probe_map_file.", call. = FALSE)
-    return(mat)
+    probe_gene_map <- AnnotationDbi::select(
+      getExportedValue(annotation_pkg, annotation_pkg),
+      keys = rownames(mat),
+      columns = platform_info$gene_column %||% "SYMBOL",
+      keytype = platform_info$probe_keytype %||% "PROBEID"
+    )
+    colnames(probe_gene_map)[1:2] <- c("probe_id", "gene_symbol")
+    mapping_method <- paste0("bioc:", annotation_pkg)
   }
 
   probe_gene_map <- probe_gene_map[!is.na(probe_gene_map$gene_symbol) &
-    nzchar(probe_gene_map$gene_symbol) &
-    probe_gene_map$gene_symbol != "NA", ]
+    nzchar(probe_gene_map$gene_symbol) & probe_gene_map$gene_symbol != "NA", ]
 
-  # Match probes
   common_probes <- intersect(rownames(mat), probe_gene_map$probe_id)
-  if (length(common_probes) == 0L) {
-    warning("No probe IDs matched. Probe IDs in matrix might differ from annotation keys. Using probe IDs as features.", call. = FALSE)
-    return(mat)
-  }
+  coverage_pct <- round(length(common_probes) / nrow(mat) * 100, 1)
 
-  message(sprintf("Mapped %d / %d probes to %d unique genes",
-    length(common_probes), nrow(mat),
-    length(unique(probe_gene_map$gene_symbol[probe_gene_map$probe_id %in% common_probes]))))
+  if (coverage_pct < 50) {
+    fallback_events <- log_fallback(fallback_events,
+      "probe_to_gene", "low_coverage",
+      paste("only", coverage_pct, "% probes mapped to genes"),
+      "gene_symbol_mapping", "probe_id_as_feature",
+      paste("Gene mapping coverage too low (", coverage_pct, "%)."),
+      requires_review = TRUE)
+    return(list(matrix = mat, mapping_method = "probe_id_only",
+      coverage_pct = coverage_pct,
+      warnings = paste("Low mapping coverage:", coverage_pct, "%."),
+      fallback_events = fallback_events))
+  }
 
   mat_mapped <- mat[common_probes, , drop = FALSE]
   gene_symbols <- probe_gene_map$gene_symbol[match(common_probes, probe_gene_map$probe_id)]
 
-  # Aggregate multi-probe genes: take the probe with maximum variance (most informative)
   dup_genes <- unique(gene_symbols[duplicated(gene_symbols)])
   if (length(dup_genes) > 0L) {
     message(sprintf("Aggregating %d genes with multiple probes (max-variance method)", length(dup_genes)))
@@ -246,23 +325,43 @@ probe_to_gene <- function(mat, platform, probe_map_file = "") {
   }))
   rownames(gene_mat) <- names(gene_list)
 
-  # Record probe mapping table
+  # Save probe mapping
   probe_table <- data.frame(
     probe_id = common_probes,
     gene_symbol = gene_symbols,
     probe_variance = probe_var,
-    kept_in_aggregation = !duplicated(gene_symbols) & !gene_symbols %in% dup_genes |
-      seq_along(gene_symbols) %in% unlist(lapply(gene_list, function(idx) idx[which.max(probe_var[idx])])),
+    kept_in_aggregation = seq_along(gene_symbols) %in%
+      unlist(lapply(gene_list, function(idx) idx[which.max(probe_var[idx])])),
     stringsAsFactors = FALSE
   )
   utils::write.table(probe_table, file.path(tables_dir, "probe_mapping.tsv"),
     sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
-  gene_mat
+  # Write mapping coverage
+  utils::write.table(
+    data.frame(total_probes = nrow(mat), mapped_probes = length(common_probes),
+      mapped_genes = nrow(gene_mat), coverage_pct = coverage_pct,
+      mapping_method = mapping_method,
+      stringsAsFactors = FALSE),
+    file.path(tables_dir, "mapping_coverage.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+  )
+
+  list(matrix = gene_mat, mapping_method = mapping_method,
+    coverage_pct = coverage_pct, warnings = character(),
+    fallback_events = fallback_events)
 }
 
-platform_to_use <- if (nzchar(platform_id)) platform_id else if (length(platform_ids) > 0L) platform_ids[[1L]] else ""
-mat <- probe_to_gene(mat, platform_to_use, probe_map_path)
+mapping_result <- probe_to_gene(mat, platform_info, probe_map_path, fallback_events)
+mat <- mapping_result$matrix
+fallback_events <- mapping_result$fallback_events %||% fallback_events
+
+# Determine mapping level
+gene_level_de <- !identical(mapping_result$mapping_method, "probe_id_only")
+mapping_status_label <- if (gene_level_de) "GENE_LEVEL_ANALYSIS_COMPLETE" else "PROBE_LEVEL_ANALYSIS_COMPLETE"
+if (mapping_result$coverage_pct < 50) {
+  mapping_status_label <- "GENE_MAPPING_REVIEW_REQUIRED"
+}
 
 # ── Sample alignment ─────────────────────────────────────────────────────────
 
@@ -277,15 +376,16 @@ utils::write.table(sample_map, file.path(tables_dir, "sample_mapping_used.tsv"),
 # ── Low-expression filter ────────────────────────────────────────────────────
 
 mat_filtered <- filter_low_expression(mat)
-message(sprintf("Genes after low-expression filter: %d / %d", nrow(mat_filtered), nrow(mat)))
+message(sprintf("Features after filter: %d / %d", nrow(mat_filtered), nrow(mat)))
 
 # ── limma DE ─────────────────────────────────────────────────────────────────
 
 fit_result <- run_limma_de(mat_filtered, sample_map, design_formula, contrast)
 result_df <- fit_result$result
 
-outputs <- write_limma_outputs(result_df, fit_result$ebayes_fit, contrast_factor,
-  contrast$numerator, contrast$denominator,
+outputs <- write_limma_outputs(result_df, fit_result$ebayes_fit,
+  fit_result$design, fit_result$contrast_matrix,
+  contrast_factor, contrast$numerator, contrast$denominator,
   sample_map, mat_filtered, tables_dir, figures_dir, logs_dir)
 
 # ── QC checks ────────────────────────────────────────────────────────────────
@@ -294,14 +394,23 @@ qc <- run_limma_qc(fit_result, mat_filtered, sample_map, contrast_factor)
 utils::write.table(qc$qc_table, file.path(tables_dir, "qc_checks.tsv"),
   sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
+if (nrow(fallback_events) > 0L) {
+  utils::write.table(fallback_events, file.path(tables_dir, "fallback_events.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+}
+
 # ── Status ───────────────────────────────────────────────────────────────────
 
 critical_outputs <- c(
   file.path(tables_dir, "sample_mapping_used.tsv"),
-  file.path(tables_dir, "design_matrix.tsv"),
+  file.path(tables_dir, "design_matrix_used.tsv"),
+  file.path(tables_dir, "contrast_matrix_used.tsv"),
+  file.path(tables_dir, "factor_levels_used.tsv"),
   file.path(tables_dir, "library_sizes.tsv"),
   file.path(tables_dir, "pca_coordinates.tsv"),
   file.path(tables_dir, "qc_checks.tsv"),
+  file.path(tables_dir, "platform_resolution.tsv"),
+  file.path(tables_dir, "mapping_coverage.tsv"),
   outputs["de_path"],
   file.path(figures_dir, "bulk_library_sizes.pdf"),
   file.path(figures_dir, "bulk_pca.pdf"),
@@ -309,12 +418,14 @@ critical_outputs <- c(
   file.path(figures_dir, paste0("bulk_meanvar_", outputs["contrast_name"], ".pdf"))
 )
 
-n_total <- nrow(result_df)
-n_de <- sum(result_df$adj.P.Val < 0.05, na.rm = TRUE)
-status_out <- determine_limma_status(critical_outputs, qc$qc_flags, n_total, n_de)
+status_out <- determine_limma_status(critical_outputs, qc, fallback_events)
+status_out$note <- paste(status_out$note, "| mapping:", mapping_status_label)
 
 status <- data.frame(
-  state = status_out$state,
+  execution_state = status_out$execution_state,
+  technical_qc = status_out$technical_qc,
+  result_signal = status_out$result_signal,
+  mapping_status = mapping_status_label,
   updated_at_utc = format(Sys.time(), tz = "UTC", usetz = TRUE),
   note = status_out$note,
   stringsAsFactors = FALSE
@@ -325,5 +436,5 @@ utils::write.table(status, file.path(manifest_dir, "workflow_status.tsv"),
 session_lines <- utils::capture.output(utils::sessionInfo())
 writeLines(session_lines, file.path(logs_dir, "sessionInfo_microarray.txt"), useBytes = TRUE)
 
-cat(status_out$state, "\n", sep = "")
+cat(status_out$execution_state, "\n", sep = "")
 cat(normalizePath(manifest_dir, winslash = "/", mustWork = TRUE), "\n", sep = "")

@@ -197,10 +197,13 @@ if (all(vapply(c("DESeq2", "ggplot2", "SummarizedExperiment"), requireNamespace,
     0L
   )
   status <- utils::read.delim(file.path(bulk_dir, "workflow_status.tsv"), stringsAsFactors = FALSE)
-  valid_completion <- c("BASIC_ANALYSIS_COMPLETE", "QC_REVIEW_REQUIRED")
-  if (!status$state[[1L]] %in% valid_completion) {
-    fail(sprintf("Bulk driver produced unexpected state: %s (expected BASIC_ANALYSIS_COMPLETE or QC_REVIEW_REQUIRED)",
-          status$state[[1L]]))
+  valid_execution <- c("EXECUTION_COMPLETE", "BASIC_ANALYSIS_COMPLETE", "QC_REVIEW_REQUIRED")
+  exec_state <- if ("execution_state" %in% names(status)) status$execution_state[[1L]] else status$state[[1L]]
+  if (!exec_state %in% valid_execution) {
+    fail(sprintf("Bulk driver produced unexpected execution_state: %s", exec_state))
+  }
+  if ("technical_qc" %in% names(status) && status$technical_qc[[1L]] == "REVIEW_REQUIRED") {
+    cat("NOTE: Bulk driver technical_qc=REVIEW_REQUIRED (expected with small fixture).\n")
   }
   qc_table <- utils::read.delim(file.path(bulk_dir, "tables", "qc_checks.tsv"), stringsAsFactors = FALSE)
   if (nrow(qc_table) == 0L) fail("Bulk driver did not produce QC checks table.")
@@ -224,8 +227,10 @@ if (all(vapply(c("limma", "ggplot2", "yaml"), requireNamespace, logical(1), quie
     0L
   )
   norm_status <- utils::read.delim(file.path(norm_dir, "workflow_status.tsv"), stringsAsFactors = FALSE)
-  if (!norm_status$state[[1L]] %in% c("BASIC_ANALYSIS_COMPLETE", "QC_REVIEW_REQUIRED")) {
-    fail(sprintf("Bulk normalized driver produced unexpected state: %s", norm_status$state[[1L]]))
+  valid_exec <- c("EXECUTION_COMPLETE", "BASIC_ANALYSIS_COMPLETE", "QC_REVIEW_REQUIRED")
+  exec_s <- if ("execution_state" %in% names(norm_status)) norm_status$execution_state[[1L]] else norm_status$state[[1L]]
+  if (!exec_s %in% valid_exec) {
+    fail(sprintf("Bulk normalized driver produced unexpected state: %s", exec_s))
   }
 } else {
   cat("SKIP\tBulk normalized driver optional check requires limma, ggplot2, and yaml.\n")
@@ -247,8 +252,10 @@ if (all(vapply(c("limma", "ggplot2", "yaml", "Biobase"), requireNamespace, logic
     0L
   )
   ma_status <- utils::read.delim(file.path(ma_dir, "workflow_status.tsv"), stringsAsFactors = FALSE)
-  if (!ma_status$state[[1L]] %in% c("BASIC_ANALYSIS_COMPLETE", "QC_REVIEW_REQUIRED")) {
-    fail(sprintf("Microarray driver produced unexpected state: %s", ma_status$state[[1L]]))
+  valid_ma <- c("EXECUTION_COMPLETE", "BASIC_ANALYSIS_COMPLETE", "QC_REVIEW_REQUIRED")
+  ma_s <- if ("execution_state" %in% names(ma_status)) ma_status$execution_state[[1L]] else ma_status$state[[1L]]
+  if (!ma_s %in% valid_ma) {
+    fail(sprintf("Microarray driver produced unexpected state: %s", ma_s))
   }
 } else {
   cat("SKIP\tMicroarray driver optional check requires limma, ggplot2, yaml, and Biobase.\n")

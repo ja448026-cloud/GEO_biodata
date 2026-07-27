@@ -96,5 +96,34 @@ if (length(deps$cran) > 0L) {
 if (length(deps$bioc) > 0L) {
   BiocManager::install(deps$bioc, ask = FALSE, update = FALSE)
 }
+
+# Post-install re-check: verify all packages loaded, write version table
+Sys.sleep(1)  # ensure installs flushed
+dep_table$installed <- vapply(dep_table$package, requireNamespace, logical(1), quietly = TRUE)
+dep_table$version <- vapply(dep_table$package, function(pkg) {
+  if (!requireNamespace(pkg, quietly = TRUE)) return("")
+  as.character(utils::packageVersion(pkg))
+}, character(1))
+
+utils::write.table(dep_table, out_path, sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+
+still_missing <- dep_table$package[!dep_table$installed]
+
 cat("DEPENDENCY_INSTALL_ATTEMPTED\n")
+
+if (length(still_missing) > 0L) {
+  cat("DEPENDENCIES_MISSING\n")
+  cat("Missing: ", paste(still_missing, collapse = ", "), "\n", sep = "")
+  cat(normalizePath(out_path, winslash = "/", mustWork = TRUE), "\n", sep = "")
+
+  r_ver <- paste(R.version$major, R.version$minor, sep = ".")
+  bioc_ver <- as.character(BiocManager::version())
+  cat(sprintf("R %s | Bioconductor %s\n", r_ver, bioc_ver))
+
+  quit(status = 1L)
+}
+
+cat("DEPENDENCIES_READY\n")
+cat("R version: ", paste(R.version$major, R.version$minor, sep = "."), "\n", sep = "")
+cat("Bioconductor: ", as.character(BiocManager::version()), "\n", sep = "")
 cat(normalizePath(out_path, winslash = "/", mustWork = TRUE), "\n", sep = "")

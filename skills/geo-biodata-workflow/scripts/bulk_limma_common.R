@@ -12,6 +12,78 @@ stop_if_missing <- function(pkgs) {
   invisible(TRUE)
 }
 
+# ── Interaction detection ─────────────────────────────────────────────────────
+
+detect_interaction <- function(design_formula) {
+  terms_str <- as.character(design_formula)
+  grepl(":", terms_str[length(terms_str)], fixed = TRUE) ||
+    grepl("\\*", terms_str[length(terms_str)])
+}
+
+# ── Explicit contrast matrix builder ──────────────────────────────────────────
+
+build_contrast_matrix <- function(design, factor, numerator, denominator, sample_map) {
+  # Construct an explicit contrast matrix with one column: numerator - denominator.
+  # Returns a matrix suitable for limma::contrasts.fit().
+  # Verifies factor levels exist; does NOT guess coefficients.
+
+  if (!factor %in% names(sample_map)) {
+    stop("Contrast factor '", factor, "' not found in sample mapping columns: ",
+      paste(names(sample_map), collapse = ", "), call. = FALSE)
+  }
+
+  factor_values <- as.character(sample_map[[factor]])
+  factor_levels <- unique(factor_values)
+
+  if (!numerator %in% factor_levels) {
+    stop("Contrast numerator '", numerator, "' not found in factor '",
+      factor, "' levels: ", paste(factor_levels, collapse = ", "), call. = FALSE)
+  }
+  if (!denominator %in% factor_levels) {
+    stop("Contrast denominator '", denominator, "' not found in factor '",
+      factor, "' levels: ", paste(factor_levels, collapse = ", "), call. = FALSE)
+  }
+
+  # Find the coefficient column names in design for each factor level
+  coef_numerator <- paste0(factor, numerator)
+  coef_denominator <- paste0(factor, denominator)
+
+  # R's model.matrix drops the reference level — detect which level is reference
+  design_cols <- colnames(design)
+
+  # Build the contrast: +1 for numerator coefficient, -1 for denominator coefficient
+  # Handle the case where one of them is the reference (intercept)
+  contrast_vec <- rep(0, ncol(design))
+  names(contrast_vec) <- design_cols
+
+  if (coef_numerator %in% design_cols) {
+    contrast_vec[coef_numerator] <- 1
+  } else if (numerator %in% factor_levels) {
+    stop("Contrast numerator '", numerator,
+      "' appears to be the reference level. ",
+      "limma contrasts.fit requires non-reference numerator coefficient. ",
+      "Available coefficients: ", paste(design_cols, collapse = ", "),
+      ". Consider re-leveling the factor.", call. = FALSE)
+  } else {
+    stop("Cannot resolve numerator coefficient for '", numerator,
+      "'. Design columns: ", paste(design_cols, collapse = ", "), call. = FALSE)
+  }
+
+  if (coef_denominator %in% design_cols) {
+    contrast_vec[coef_denominator] <- -1
+  } else if (denominator %in% factor_levels) {
+    # denominator is the reference level — contrast is just numerator coefficient alone
+    message("Denominator '", denominator, "' is the reference level. Contrast tests numerator coefficient directly.")
+  } else {
+    stop("Cannot resolve denominator coefficient for '", denominator,
+      "'. Design columns: ", paste(design_cols, collapse = ", "), call. = FALSE)
+  }
+
+  contrast_name <- paste(numerator, "vs", denominator, sep = "_")
+  cm <- matrix(contrast_vec, ncol = 1L, dimnames = list(design_cols, contrast_name))
+  cm
+}
+
 # ── Matrix and metadata loading ──────────────────────────────────────────────
 
 read_matrix_input <- function(input_path) {
@@ -45,18 +117,83 @@ align_samples <- function(mat, sample_map, sample_id_col) {
   missing_from_matrix <- setdiff(sample_ids, colnames(mat))
   extra_in_matrix <- setdiff(colnames(mat), sample_ids)
   if (length(missing_from_matrix) > 0L) {
-    stop("Samples in mapping not found in matrix columns: ", paste(missing_from_matrix, collapse = ", "), call. = FALSE)
+    stop("Samples in mapping not found in matrix columns: ",
+      paste(missing_from_matrix, collapse = ", "), call. = FALSE)
   }
   if (length(extra_in_matrix) > 0L) {
-    stop("Matrix columns not found in sample mapping: ", paste(extra_in_matrix, collapse = ", "), call. = FALSE)
+    stop("Matrix columns not found in sample mapping: ",
+      paste(extra_in_matrix, collapse = ", "), call. = FALSE)
   }
   mat <- mat[, sample_ids, drop = FALSE]
   sample_map <- sample_map[match(sample_ids, sample_map[[sample_id_col]]), , drop = FALSE]
   rownames(sample_map) <- sample_ids
+
+  # Ensure contrast factor is a factor with explicit levels
+  if (!is.factor(sample_map[[contrast_factor]])) {
+    sample_map[[contrast_factor]] <- factor(sample_map[[contrast_factor]])
+  }
+
   list(matrix = mat, metadata = sample_map)
 }
 
-# ── Low-expression filtering for normalized matrices ────────────────────────
+# ── Scale contract validation ────────────────────────────────────────────────
+
+validate_scale_contract <- function(input_type, scale_config, mat) {
+  # Per the normalized input scale contract:
+  # - normalized_expression + unknown scale -> EDA only
+  # - raw-like integer matrix declared log-normalized -> fail closed
+  # - TPM/FPKM/CPM without confirming log -> no limma DE
+
+  transformed <- isTRUE(scale_config$transformed)
+  transform_type <- scale_config$transform %||% ""
+  evidence_source <- scale_config$evidence_source %||% ""
+
+  # Detect raw-like integer matrix
+  mat_vals <- as.vector(mat[!is.na(mat)])
+  if (length(mat_vals) > 0L) {
+    integer_ratio <- sum(abs(mat_vals - round(mat_vals)) < 1e-8, na.rm = TRUE) / length(mat_vals)
+    all_nonneg <- all(mat_vals >= -1e-8, na.rm = TRUE)
+  } else {
+    integer_ratio <- 0
+    all_nonneg <- TRUE
+  }
+
+  raw_like <- integer_ratio > 0.95 && all_nonneg
+
+  if (raw_like && transformed && grepl("log", transform_type, ignore.case = TRUE)) {
+    stop("INPUT_SCALE_CONFLICT: Matrix appears to be raw integer counts (",
+      round(integer_ratio * 100), "% integer-like, all non-negative) ",
+      "but manifest declares log-transformed normalized data. ",
+      "Raw counts should use route bulk_raw_counts with run_bulk_counts.R. ",
+      "If this IS normalized data, set scale.transformed=false or provide evidence.",
+      call. = FALSE)
+  }
+
+  allow_de <- TRUE
+  conditions <- character()
+
+  if (input_type == "normalized_expression" && !nzchar(evidence_source)) {
+    allow_de <- FALSE
+    conditions <- c(conditions, "normalized_expression with unknown scale: EDA only")
+  }
+
+  if (input_type %in% c("tpm", "fpkm", "cpm")) {
+    if (!transformed || !nzchar(transform_type)) {
+      allow_de <- FALSE
+      conditions <- c(conditions,
+        sprintf("%s without confirmed log-transform: no limma DE allowed", input_type))
+    }
+  }
+
+  list(
+    allow_de = allow_de,
+    conditions = conditions,
+    raw_like = raw_like,
+    integer_ratio = integer_ratio
+  )
+}
+
+# ── Low-expression filtering ─────────────────────────────────────────────────
 
 filter_low_expression <- function(mat, min_expr = 0.1, min_samples_prop = 0.5) {
   min_samples <- max(1L, floor(ncol(mat) * min_samples_prop))
@@ -72,40 +209,103 @@ filter_low_expression <- function(mat, min_expr = 0.1, min_samples_prop = 0.5) {
 
 run_limma_de <- function(mat, sample_map, design_formula, contrast) {
   stop_if_missing(c("limma"))
-  design <- stats::model.matrix(design_formula, data = sample_map)
 
-  # Identify the coefficient for the contrast of interest
-  contrast_coef <- paste0(contrast$factor, contrast$numerator)
-  if (!contrast_coef %in% colnames(design)) {
-    all_coefs <- colnames(design)
-    coef_candidates <- grep(paste0("^", contrast$factor), all_coefs, value = TRUE)
-    if (length(coef_candidates) > 0L) {
-      contrast_coef <- coef_candidates[length(coef_candidates)]
-    } else {
-      stop("Could not find coefficient for ", contrast$factor, contrast$numerator,
-        " in design matrix columns: ", paste(all_coefs, collapse = ", "), call. = FALSE)
-    }
+  if (detect_interaction(design_formula)) {
+    stop("Interaction formulas are not supported by the current limma driver. ",
+      "Formula: ", deparse(design_formula),
+      ". Use a main-effects-only design or implement interaction support.",
+      call. = FALSE)
   }
 
+  design <- stats::model.matrix(design_formula, data = sample_map)
+
+  contrast_matrix <- build_contrast_matrix(
+    design = design,
+    factor = contrast$factor,
+    numerator = contrast$numerator,
+    denominator = contrast$denominator,
+    sample_map = sample_map
+  )
+
   fit <- limma::lmFit(mat, design)
-  fit2 <- limma::contrasts.fit(fit, coefficients = contrast_coef)
+  fit2 <- limma::contrasts.fit(fit, contrast_matrix)
   fit2 <- limma::eBayes(fit2, trend = TRUE)
-  result <- limma::topTable(fit2, coef = contrast_coef, number = Inf, sort.by = "none")
-  list(fit = fit, ebayes_fit = fit2, result = result)
+
+  contrast_name <- colnames(contrast_matrix)[[1L]]
+  result <- limma::topTable(fit2, coef = contrast_name, number = Inf, sort.by = "none")
+
+  list(
+    fit = fit,
+    ebayes_fit = fit2,
+    result = result,
+    design = design,
+    contrast_matrix = contrast_matrix,
+    contrast_name = contrast_name
+  )
+}
+
+# ── Fallback events logger ───────────────────────────────────────────────────
+
+init_fallback_events <- function() {
+  data.frame(
+    stage = character(),
+    fallback_type = character(),
+    trigger = character(),
+    original_method = character(),
+    fallback_method = character(),
+    effect_on_interpretation = character(),
+    requires_review = logical(),
+    timestamp = character(),
+    stringsAsFactors = FALSE
+  )
+}
+
+log_fallback <- function(events, stage, fallback_type, trigger, original_method,
+                          fallback_method, effect_on_interpretation, requires_review = TRUE) {
+  rbind(events, data.frame(
+    stage = stage,
+    fallback_type = fallback_type,
+    trigger = trigger,
+    original_method = original_method,
+    fallback_method = fallback_method,
+    effect_on_interpretation = effect_on_interpretation,
+    requires_review = requires_review,
+    timestamp = format(Sys.time(), tz = "UTC", usetz = TRUE),
+    stringsAsFactors = FALSE
+  ))
 }
 
 # ── Output writers ───────────────────────────────────────────────────────────
 
-write_limma_outputs <- function(result, ebayes_fit, contrast_factor, numerator, denominator,
-                                sample_map, mat, tables_dir, figures_dir, logs_dir) {
-  contrast_name <- paste(contrast_factor, numerator, "vs", denominator, sep = "_")
+write_limma_outputs <- function(result, ebayes_fit, design, contrast_matrix,
+                                 contrast_factor, numerator, denominator,
+                                 sample_map, mat, tables_dir, figures_dir, logs_dir) {
+  contrast_name <- paste(numerator, "vs", denominator, sep = "_")
 
-  # Design matrix
-  design_formula <- stats::as.formula(paste("~", contrast_factor))
-  design_matrix <- stats::model.matrix(design_formula, data = sample_map)
+  # design_matrix_used.tsv — the actual model.matrix used for fitting
   utils::write.table(
-    data.frame(sample_id = rownames(design_matrix), design_matrix, check.names = FALSE),
-    file.path(tables_dir, "design_matrix.tsv"),
+    data.frame(sample_id = rownames(design), design, check.names = FALSE),
+    file.path(tables_dir, "design_matrix_used.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+  )
+
+  # contrast_matrix_used.tsv — the explicit contrast
+  utils::write.table(
+    data.frame(coefficient = rownames(contrast_matrix),
+               contrast_matrix, check.names = FALSE),
+    file.path(tables_dir, "contrast_matrix_used.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+  )
+
+  # factor_levels_used.tsv
+  factor_levels <- data.frame(
+    factor = contrast_factor,
+    level = levels(sample_map[[contrast_factor]]),
+    n_samples = as.integer(table(sample_map[[contrast_factor]])),
+    stringsAsFactors = FALSE
+  )
+  utils::write.table(factor_levels,
+    file.path(tables_dir, "factor_levels_used.tsv"),
     sep = "\t", quote = FALSE, row.names = FALSE, na = ""
   )
 
@@ -116,7 +316,7 @@ write_limma_outputs <- function(result, ebayes_fit, contrast_factor, numerator, 
   de_path <- file.path(tables_dir, paste0("de_results_", contrast_name, ".tsv"))
   utils::write.table(de_out, de_path, sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
-  # Library sizes (sum of expression per sample as proxy for signal scale)
+  # Library sizes
   lib_sizes <- data.frame(
     sample_id = colnames(mat),
     total_signal = colSums(mat, na.rm = TRUE),
@@ -127,8 +327,7 @@ write_limma_outputs <- function(result, ebayes_fit, contrast_factor, numerator, 
     sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
   lib_plot <- ggplot2::ggplot(lib_sizes, ggplot2::aes(x = sample_id, y = total_signal, fill = group)) +
-    ggplot2::geom_col() +
-    ggplot2::theme_bw() +
+    ggplot2::geom_col() + ggplot2::theme_bw() +
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1))
   ggplot2::ggsave(file.path(figures_dir, "bulk_library_sizes.pdf"), lib_plot, width = 7, height = 4)
 
@@ -145,59 +344,62 @@ write_limma_outputs <- function(result, ebayes_fit, contrast_factor, numerator, 
     sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
   pca_plot <- ggplot2::ggplot(pca_df, ggplot2::aes(x = PC1, y = PC2, color = group, label = sample_id)) +
-    ggplot2::geom_point(size = 3) +
-    ggplot2::geom_text(vjust = -0.8, show.legend = FALSE) +
+    ggplot2::geom_point(size = 3) + ggplot2::geom_text(vjust = -0.8, show.legend = FALSE) +
     ggplot2::theme_bw()
   ggplot2::ggsave(file.path(figures_dir, "bulk_pca.pdf"), pca_plot, width = 5.5, height = 4.5)
 
   # P-value histogram
   pval_df <- data.frame(pvalue = de_out$P.Value)
   pval_plot <- ggplot2::ggplot(pval_df, ggplot2::aes(x = pvalue)) +
-    ggplot2::geom_histogram(bins = 30, boundary = 0, color = "white") +
-    ggplot2::theme_bw()
+    ggplot2::geom_histogram(bins = 30, boundary = 0, color = "white") + ggplot2::theme_bw()
   ggplot2::ggsave(file.path(figures_dir, paste0("bulk_pvalue_histogram_", contrast_name, ".pdf")),
     pval_plot, width = 5.5, height = 4)
 
-  # Mean-variance trend (limma diagnostic)
+  # Mean-variance trend
   grDevices::pdf(file.path(figures_dir, paste0("bulk_meanvar_", contrast_name, ".pdf")), width = 6, height = 5)
   limma::plotSA(ebayes_fit, main = "Mean-variance trend")
   grDevices::dev.off()
+
+  # model_specification.txt
+  model_spec <- c(
+    paste("Contrast factor:", contrast_factor),
+    paste("Numerator:", numerator),
+    paste("Denominator:", denominator),
+    paste("Contrast:", paste(numerator, "-", denominator)),
+    "",
+    "Factor levels:",
+    paste("  ", factor_levels$level, " (n=", factor_levels$n_samples, ")", sep = ""),
+    "",
+    "Design matrix columns:",
+    paste("  ", colnames(design)),
+    "",
+    "Contrast matrix:",
+    utils::capture.output(print(contrast_matrix))
+  )
+  writeLines(model_spec, file.path(logs_dir, "model_specification.txt"), useBytes = TRUE)
 
   c(tables_dir = tables_dir, figures_dir = figures_dir, logs_dir = logs_dir,
     de_path = de_path, contrast_name = contrast_name)
 }
 
-# ── QC checks ────────────────────────────────────────────────────────────────
+# ── QC checks (split: technical QC vs result signal) ─────────────────────────
 
 run_limma_qc <- function(fit_result, mat, sample_map, contrast_factor) {
-  qc_flags <- character()
-
   de_df <- fit_result$result
   n_total <- nrow(de_df)
   n_na_pval <- sum(is.na(de_df$P.Value))
   n_non_na <- n_total - n_na_pval
   n_de <- sum(de_df$adj.P.Val < 0.05, na.rm = TRUE)
 
-  if (n_na_pval / n_total > 0.5) {
-    qc_flags <- c(qc_flags, sprintf("high_NA_proportion: %.1f%% (%d/%d genes have NA P.Value)",
-      n_na_pval / n_total * 100, n_na_pval, n_total))
-  }
-  if (n_non_na < 100L) {
-    qc_flags <- c(qc_flags, sprintf("low_effective_genes: only %d genes tested", n_non_na))
-  }
-  if (n_de == 0L) {
-    qc_flags <- c(qc_flags, "zero_DE_genes_at_padj0.05: no gene passes FDR=5%")
-  }
+  # ── Technical QC (data integrity, model convergence) ──
+  technical_flags <- character()
 
-  non_na_pvals <- de_df$P.Value[!is.na(de_df$P.Value)]
-  if (length(non_na_pvals) >= 100L) {
-    pval_hist <- hist(non_na_pvals, breaks = 20, plot = FALSE)
-    low_pval_frac <- sum(pval_hist$counts[1:2]) / sum(pval_hist$counts)
-    if (low_pval_frac < 0.02) {
-      qc_flags <- c(qc_flags, "pvalue_distribution_uniform: very few low p-values suggest no differential signal")
-    }
-  } else {
-    qc_flags <- c(qc_flags, "insufficient_pvalues_for_diagnostics")
+  if (n_na_pval / n_total > 0.5) {
+    technical_flags <- c(technical_flags,
+      sprintf("high_NA_proportion: %.1f%%", n_na_pval / n_total * 100))
+  }
+  if (n_non_na < 10L) {
+    technical_flags <- c(technical_flags, sprintf("very_few_tested_genes: %d", n_non_na))
   }
 
   # Library-size outlier detection
@@ -208,7 +410,8 @@ run_limma_qc <- function(fit_result, mat, sample_map, contrast_factor) {
   if (lib_mad > 0) {
     lib_outliers <- colnames(mat)[abs(lib_totals - lib_median) / lib_mad > 4]
     if (length(lib_outliers) > 0L) {
-      qc_flags <- c(qc_flags, paste0("library_size_outlier: ", paste(lib_outliers, collapse = ", ")))
+      technical_flags <- c(technical_flags,
+        paste0("library_size_outlier: ", paste(lib_outliers, collapse = ", ")))
     }
   }
 
@@ -223,50 +426,90 @@ run_limma_qc <- function(fit_result, mat, sample_map, contrast_factor) {
     pca_threshold <- stats::median(pca_dist) + 4 * pca_mad
     pca_outliers <- rownames(pca_scores)[pca_dist > pca_threshold]
     if (length(pca_outliers) > 0L) {
-      qc_flags <- c(qc_flags, paste0("pca_outlier: ", paste(pca_outliers, collapse = ", ")))
+      technical_flags <- c(technical_flags,
+        paste0("pca_outlier: ", paste(pca_outliers, collapse = ", ")))
     }
   }
 
+  technical_qc <- if (length(technical_flags) > 0L) "REVIEW_REQUIRED" else "PASS"
+
+  # ── Result signal (biological interpretation, NOT technical failure) ──
+  signal_level <- "NOT_ASSESSED"
+  non_na_pvals <- de_df$P.Value[!is.na(de_df$P.Value)]
+
+  if (length(non_na_pvals) >= 100L) {
+    pval_hist <- hist(non_na_pvals, breaks = 20, plot = FALSE)
+    low_pval_frac <- sum(pval_hist$counts[1:2]) / sum(pval_hist$counts)
+
+    signal_level <- if (n_de >= 50L && low_pval_frac > 0.05) {
+      "STRONG_SIGNAL"
+    } else if (n_de >= 1L && low_pval_frac > 0.02) {
+      "WEAK_SIGNAL"
+    } else {
+      "NO_STRONG_SIGNAL"
+    }
+  } else {
+    signal_level <- "INCONCLUSIVE"
+  }
+
+  # QC table — keep for transparency
   qc_table <- data.frame(
-    check = c("n_genes_tested", "n_genes_non_na", "n_de_genes_padj05",
-      "na_proportion", "pvalue_low_fraction", "library_size_outliers", "pca_outliers"),
+    check = c("execution_state", "technical_qc", "result_signal",
+      "n_genes_tested", "n_genes_non_na", "n_de_genes_padj05",
+      "na_proportion", "pvalue_low_fraction",
+      "library_size_outlier_count", "pca_outlier_count"),
     value = c(
+      "EXECUTION_COMPLETE", technical_qc, signal_level,
       as.character(n_total), as.character(n_non_na), as.character(n_de),
       sprintf("%.3f", n_na_pval / n_total),
       sprintf("%.3f", if (length(non_na_pvals) >= 100L) low_pval_frac else NA_real_),
       as.character(length(lib_outliers)), as.character(length(pca_outliers))
     ),
-    flag = c(
-      if (n_total < 100L) "REVIEW" else "PASS",
-      if (n_non_na < 100L) "REVIEW" else "PASS",
-      if (n_de == 0L) "REVIEW" else "PASS",
-      if (n_na_pval / n_total > 0.5) "REVIEW" else "PASS",
-      if (length(non_na_pvals) >= 100L && low_pval_frac < 0.02) "REVIEW" else "PASS",
-      if (length(lib_outliers) > 0L) "REVIEW" else "PASS",
-      if (length(pca_outliers) > 0L) "REVIEW" else "PASS"
-    ),
     stringsAsFactors = FALSE
   )
-  qc_table <- qc_table[qc_table$flag == "REVIEW" |
-    qc_table$check %in% c("n_genes_tested", "n_genes_non_na", "n_de_genes_padj05", "na_proportion"), ]
 
-  list(qc_table = qc_table, qc_flags = qc_flags)
+  list(
+    qc_table = qc_table,
+    technical_qc = technical_qc,
+    result_signal = signal_level,
+    technical_flags = technical_flags,
+    n_de = n_de,
+    n_total = n_total
+  )
 }
 
-# ── Status determination ─────────────────────────────────────────────────────
+# ── Status determination (with split dimensions) ─────────────────────────────
 
-determine_limma_status <- function(output_paths, qc_flags, n_genes, n_de) {
+determine_limma_status <- function(output_paths, qc_result, fallback_events) {
   outputs_complete <- all(file.exists(output_paths) & file.info(output_paths)$size > 0)
-  qc_pass <- length(qc_flags) == 0L
 
   if (!outputs_complete) {
-    list(state = "EXECUTION_COMPLETE",
-      note = "Limma driver ran but one or more required outputs are missing or empty.")
-  } else if (qc_pass) {
-    list(state = "BASIC_ANALYSIS_COMPLETE",
-      note = sprintf("Limma DE completed. %d genes tested, %d DE genes at padj<0.05. All QC checks passed.", n_genes, n_de))
-  } else {
-    list(state = "QC_REVIEW_REQUIRED",
-      note = paste("QC checks flagged for review:", paste(qc_flags, collapse = "; ")))
+    return(list(
+      execution_state = "EXECUTION_COMPLETE",
+      technical_qc = "NOT_ASSESSED",
+      result_signal = "NOT_ASSESSED",
+      note = "Limma driver ran but one or more required outputs are missing or empty."
+    ))
   }
+
+  execution_state <- "EXECUTION_COMPLETE"
+  technical_qc <- qc_result$technical_qc
+  result_signal <- qc_result$result_signal
+
+  has_fallback_review <- any(fallback_events$requires_review)
+  if (has_fallback_review && technical_qc == "PASS") {
+    technical_qc <- "REVIEW_REQUIRED"
+  }
+
+  note <- sprintf(
+    "Limma DE completed. %d genes tested, %d DE genes. technical_qc=%s, result_signal=%s.",
+    qc_result$n_total, qc_result$n_de, technical_qc, result_signal
+  )
+
+  list(
+    execution_state = execution_state,
+    technical_qc = technical_qc,
+    result_signal = result_signal,
+    note = note
+  )
 }

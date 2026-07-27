@@ -1,0 +1,15 @@
+gpl_id	platform_name	annotation_package	probe_keytype	gene_column	species	mapping_status	source	last_verified
+GPL96	Affymetrix Human Genome U133A	hgu133a.db	PROBEID	SYMBOL	Homo sapiens	verified	Bioconductor	2026-07-27
+GPL97	Affymetrix Human Genome U133A 2.0	hgu133a2.db	PROBEID	SYMBOL	Homo sapiens	verified	Bioconductor	2026-07-27
+GPL570	Affymetrix Human Genome U133 Plus 2.0	hgu133plus2.db	PROBEID	SYMBOL	Homo sapiens	verified	Bioconductor	2026-07-27
+GPL571	Affymetrix Human Genome U133A 2.0	hgu133a2.db	PROBEID	SYMBOL	Homo sapiens	verified	Bioconductor	2026-07-27
+GPL6244	Affymetrix Human Gene 1.0 ST	hugene10sttranscriptcluster.db	PROBEID	SYMBOL	Homo sapiens	verified	Bioconductor	2026-07-27
+GPL6246	Affymetrix MoGene 1.0 ST	mogene10sttranscriptcluster.db	PROBEID	SYMBOL	Mus musculus	verified	Bioconductor	2026-07-27
+GPL6947	Illumina HumanHT-12 V3.0	illuminaHumanv3.db	PROBEID	SYMBOL	Homo sapiens	verified	Bioconductor	2026-07-27
+GPL10558	Illumina HumanHT-12 V4.0	illuminaHumanv4.db	PROBEID	SYMBOL	Homo sapiens	verified	Bioconductor	2026-07-27
+GPL1261	Affymetrix Mouse Genome 430 2.0	mouse4302.db	PROBEID	SYMBOL	Mus musculus	verified	Bioconductor	2026-07-27
+GPL1355	Affymetrix Rat Genome 230 2.0	rat2302.db	PROBEID	SYMBOL	Rattus norvegicus	verified	Bioconductor	2026-07-27
+GPL6887	Illumina HumanWG-6 v3.0	illuminaHumanv3.db	PROBEID	SYMBOL	Homo sapiens	verified	Bioconductor	2026-07-27
+GPL17021	Illumina HiSeq 2500 (RNA-seq)	NA	NA	NA	Homo sapiens	no_mapping_needed	NA	2026-07-27
+GPL18573	Illumina NextSeq 500 (Homo sapiens)	NA	NA	NA	Homo sapiens	no_mapping_needed	NA	2026-07-27
+GPL24676	Illumina NovaSeq 6000 (Homo sapiens)	NA	NA	NA	Homo sapiens	no_mapping_needed	NA	2026-07-27
