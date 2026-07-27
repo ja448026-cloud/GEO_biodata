@@ -30,6 +30,7 @@ GSE accession -> resource inventory -> input routing -> selective download -> ba
   - environment check;
   - GEO metadata/sample/supplement discovery;
   - publication supplement lookup;
+  - reviewable download-plan generation;
   - guarded GEO supplementary-file download;
   - lightweight bulk, GSEA, and scRNA analysis templates.
 - Short reference notes for common decisions:
@@ -121,18 +122,25 @@ runs/GSE000000/resources/supplement_index.tsv
 runs/GSE000000/resources/routing_hint.tsv
 runs/GSE000000/resources/publication_links.tsv
 runs/GSE000000/resources/sra_links.tsv
+runs/GSE000000/workflow_events.tsv
 ```
 
-Download only the reviewed files needed for the selected route:
+Generate a download plan for route-relevant files, review it, then download only reviewed rows:
 
-```bash
-Rscript skills/geo-biodata-workflow/scripts/download_geo_supp.R \
-  GSE000000 \
-  runs/GSE000000/raw \
-  "counts|matrix|metadata|h5ad|rds|mtx"
+```powershell
+Rscript skills/geo-biodata-workflow/scripts/generate_download_plan.R `
+  runs/GSE000000 `
+  "counts|matrix|metadata|h5ad|rds|mtx" `
+  "candidate processed expression or metadata file"
+
+# Edit runs/GSE000000/plans/download_plan.tsv and set reviewed=TRUE
+# only for files confirmed to match the selected route.
+Rscript skills/geo-biodata-workflow/scripts/download_geo_supp.R `
+  runs/GSE000000/plans/download_plan.tsv `
+  runs/GSE000000/raw
 ```
 
-The downloader intentionally refuses an unrestricted pattern such as `.*`. This prevents accidental downloads of every supplementary file in a large GEO record.
+The plan generator and downloader intentionally refuse unrestricted patterns such as `.*`. The downloader also refuses selected rows that have not been reviewed. This prevents accidental downloads of every supplementary file in a large GEO record.
 
 ## Typical agent prompt
 
@@ -158,7 +166,7 @@ Expected behavior:
    - author-processed object;
    - metadata-only;
    - raw-only handoff.
-6. Download only route-relevant files.
+6. Generate a download plan, review it, and download only `reviewed=TRUE` route-relevant files.
 7. Preserve raw downloads unchanged and record hashes.
 8. Run only basic QC/analysis supported by the reviewed input.
 9. Save status, summary, scripts, tables, figures, logs, and session information.
@@ -211,6 +219,7 @@ geo_biodata_workflow/
         check_environment.R
         discover_geo.R
         collect_publication_supplements.R
+        generate_download_plan.R
         download_geo_supp.R
         analyze_bulk_template.R
         run_gsea_template.R
@@ -238,6 +247,8 @@ Each GEO accession should produce a self-contained run directory:
     publication_supplements.tsv
     routing_hint.tsv
     sra_links.tsv
+  plans/
+    download_plan.tsv
   raw/
     download_manifest.tsv
   derived/
@@ -247,6 +258,7 @@ Each GEO accession should produce a self-contained run directory:
   scripts/
   environment.tsv
   workflow_status.tsv
+  workflow_events.tsv
   summary.md
 ```
 
@@ -256,10 +268,11 @@ Every figure should have a source script and either a source table or a document
 
 | State | Meaning |
 |---|---|
+| `DISCOVERY_PARTIAL` | Public-resource discovery ran, but one or more discovery steps failed or returned incomplete metadata |
 | `RESOURCE_INVENTORY_COMPLETE` | GEO/public resources were collected; analysis has not started |
+| `REVIEW_REQUIRED` | Human review is needed for sample characteristics, SuperSeries/SubSeries relationships, metadata, QC thresholds, labels, or conflicting resources |
 | `READY_FOR_BASIC_ANALYSIS` | Inputs and metadata support one basic route |
 | `BASIC_ANALYSIS_COMPLETE` | Required tables, figures, logs, and status exist |
-| `REVIEW_REQUIRED` | Human review is needed for metadata, QC thresholds, labels, or conflicting resources |
 | `BLOCKED_INPUT` | No supported processed input is available |
 | `BLOCKED_METADATA` | Biological groups or units cannot be reconstructed safely |
 | `RAW_COMPUTE_REQUIRED` | Only FASTQ/raw sequencing data are available |

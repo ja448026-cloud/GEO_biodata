@@ -19,15 +19,17 @@ Treat this skill as a reusable execution path — a coordination layer over exis
 3. Run `scripts/discover_geo.R <GSE> <run-dir>` before downloading expression files.
 4. Review the resulting GEO metadata, sample index, supplement index, publication links, species, assay type, sample count, and likely biological unit.
 5. Read `references/routing-and-resources.md` and select exactly one input route.
-6. Download only the files needed for that route with `scripts/download_geo_supp.R <GSE> <raw-dir> <regex>`.
-7. Preserve downloaded files unchanged. Record hashes and analyze copies or derived objects.
-8. For bulk or microarray data, read `references/basic-bulk.md` plus `references/bulk-de-gsea-rules.md`, then optionally use `scripts/analyze_bulk_template.R` as a starting point.
-9. For single-cell data, read `references/basic-scrna.md` plus `references/scrna-reusable-rules-and-markers.md`, then optionally use `scripts/analyze_scrna_template.R` as a starting point.
-10. Save the input inventory, sample mapping, code, tables, figures, package versions, warnings, and final status.
+6. Generate a route-specific download plan with `scripts/generate_download_plan.R <run-dir> <regex> [reason]`.
+7. Review `plans/download_plan.tsv`, set `reviewed=TRUE` only for files confirmed to match the selected route, then download with `scripts/download_geo_supp.R <download-plan.tsv> <raw-dir>`.
+8. Preserve downloaded files unchanged. Record hashes and analyze copies or derived objects.
+9. For bulk or microarray data, read `references/basic-bulk.md` plus `references/bulk-de-gsea-rules.md`, then optionally use `scripts/analyze_bulk_template.R` as a starting point.
+10. For single-cell data, read `references/basic-scrna.md` plus `references/scrna-reusable-rules-and-markers.md`, then optionally use `scripts/analyze_scrna_template.R` as a starting point.
+11. Save the input inventory, sample mapping, code, tables, figures, package versions, warnings, and final status.
 
 ## Allowed outcomes
 
 - `RESOURCE_INVENTORY_COMPLETE`: resources were collected but analysis has not started.
+- `DISCOVERY_PARTIAL`: public-resource discovery ran, but one or more discovery steps failed or returned incomplete metadata.
 - `READY_FOR_BASIC_ANALYSIS`: input and metadata support a basic workflow.
 - `BASIC_ANALYSIS_COMPLETE`: required outputs and checks exist.
 - `REVIEW_REQUIRED`: a human must confirm sample mapping, QC thresholds, or labels.
@@ -48,6 +50,8 @@ Do not silently convert a blocked state into an analysis result.
     supplement_index.tsv
     publication_links.tsv
     publication_supplements.tsv  (supplementary links from publisher)
+  plans/
+    download_plan.tsv
   raw/
     download_manifest.tsv
   derived/
@@ -57,6 +61,7 @@ Do not silently convert a blocked state into an analysis result.
   scripts/
   environment.tsv
   workflow_status.tsv
+  workflow_events.tsv
   summary.md
 ```
 
@@ -72,7 +77,7 @@ Every figure must have a source table or documented object and the script that g
 - Do not apply fixed single-cell QC cutoffs without inspecting per-sample distributions.
 - Do not run donor-level inference by treating cells as independent replicates.
 - Do not scrape paywalled papers. Record DOI/PMID/PMCID and use lawful open resources or user-supplied files.
-- Do not download every supplementary file when a reviewed filename filter is sufficient.
+- Do not download every supplementary file when a reviewed filename filter is sufficient. Generate a download plan first and require `reviewed=TRUE` before transfer.
 - Stop at `RAW_COMPUTE_REQUIRED` rather than implementing alignment or quantification ad hoc.
 
 ## Analysis template scripts
@@ -83,6 +88,7 @@ Template scripts in `scripts/` provide a starting point for the agent:
 - `run_gsea_template.R` — lightweight fgsea preranked GSEA template for a named rank vector and local gene sets.
 - `analyze_scrna_template.R` — Seurat workflow skeleton for single-cell data.
 - `marker_utilities.R` — Shared gene signature scoring, generic marker panels, marker-presence checks, and marker table helpers.
+- `generate_download_plan.R` — creates a reviewable `plans/download_plan.tsv` from the supplement index before any file transfer.
 
 These templates are intentionally skeletal. The agent must customize thresholds, group definitions, contrast specifications, and figure parameters per dataset. They exist to reduce repetitive boilerplate and to enforce consistent output conventions, not to replace dataset-specific judgment.
 

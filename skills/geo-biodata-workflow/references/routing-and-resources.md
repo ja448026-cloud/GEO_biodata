@@ -30,14 +30,27 @@ Check whether the record is a SuperSeries or SubSeries. If related GSE records e
 
 Prefer the smallest author-provided processed resource that preserves the quantities needed for the requested analysis.
 
-## 3. Minimum provenance checks
+## 3. Download plan before transfer
+
+Do not pass a broad regular expression directly to a downloader. After routing, generate `plans/download_plan.tsv`, then review each selected row.
+
+Minimum fields to check before setting `reviewed=TRUE`:
+
+- `file_name` and `supplement_url` match the selected route;
+- selected files are not redundant raw archives when a smaller processed matrix/object is available;
+- expected size is acceptable for the local device and network;
+- the selection reason is recorded in route-specific language.
+
+The downloader should transfer only rows where both `selected=TRUE` and `reviewed=TRUE`.
+
+## 4. Minimum provenance checks
 
 - Record whether expression values are raw counts, log-normalized expression, TPM/FPKM/CPM, microarray intensities, or author-processed object layers.
 - Record evidence for species, tissue, donor/sample identity, disease/control labels, and batch fields.
 - Prefer author metadata and supplementary tables over inferred file-name parsing.
 - If multiple processed resources disagree, stop at `REVIEW_REQUIRED` and document the conflict.
 
-## 4. Resource priority
+## 5. Resource priority
 
 1. GEO series and GSM characteristics.
 2. Supplementary sample or cell metadata tables.
@@ -48,7 +61,7 @@ Prefer the smallest author-provided processed resource that preserves the quanti
 
 Never replace original labels. Store `author_label`, `harmonized_label`, `label_source`, `confidence`, and `review_note`.
 
-## 5. Recommended public components
+## 6. Recommended public components
 
 - GEO access and supplements: [GEOquery](https://bioconductor.org/packages/GEOquery/)
 - Raw accession/FASTQ handoff: [nf-core/fetchngs](https://nf-co.re/fetchngs/latest/)

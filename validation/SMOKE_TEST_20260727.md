@@ -46,6 +46,24 @@ Validation after simplification:
 - Public user run directory was standardized as `runs/<GSE>/`; `validation/runs/` is reserved for maintainer smoke tests.
 - MVP promotion criteria no longer imply that this repository vendors the host skill validator.
 
+## Plan-First Hardening
+
+The 2026-07-27 follow-up hardening addressed the first operational gap found during local use: discovery can be partially successful while sample-characteristic extraction or supplement lookup fails.
+
+Accepted changes:
+
+- `discover_geo.R` now writes `workflow_events.tsv` and can emit `DISCOVERY_PARTIAL`, `REVIEW_REQUIRED`, or `BLOCKED_METADATA` instead of always declaring `RESOURCE_INVENTORY_COMPLETE`.
+- `supplement_index.tsv` now includes explicit `supplement_url` and `file_name` fields when GEO reports downloadable supplements.
+- Added `generate_download_plan.R`, which creates `plans/download_plan.tsv` and refuses broad patterns such as `.*`.
+- `download_geo_supp.R` now supports plan-first downloads and only transfers rows with `selected=TRUE` and `reviewed=TRUE`.
+- Added `validation/run_smoke_checks.R` for deterministic local checks: R parseability, broad-regex refusal, unreviewed-plan refusal, invalid-URL refusal, and public-tree path scanning.
+
+Validation after plan-first hardening:
+
+- `validation/run_smoke_checks.R`: PASS, including parse checks for all 9 R scripts.
+- Live lightweight discovery smoke with `GSE2553 --no-characteristics`: PASS.
+- The lightweight smoke wrote `REVIEW_REQUIRED`, recorded `sample_characteristics=SKIPPED`, and preserved the route hint `bulk_microarray` without expression-data download.
+
 ## Boundary
 
-This smoke test validates the environment, skill structure, public-resource discovery, output creation, and download guard. It does not claim biological validity for bulk DE, GSEA, or scRNA clustering. Those templates remain lightweight workflow aids that require accession-specific metadata review.
+This smoke test validates the environment, skill structure, public-resource discovery, output creation, and download guards. It does not claim biological validity for bulk DE, GSEA, or scRNA clustering. Those templates remain lightweight workflow aids that require accession-specific metadata review.

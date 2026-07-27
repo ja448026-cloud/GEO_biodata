@@ -35,6 +35,27 @@ for (path in c(
   if (!dir.exists(path)) dir.create(path, recursive = TRUE)
 }
 
+workflow_events <- data.frame(
+  stage = character(),
+  severity = character(),
+  status = character(),
+  message = character(),
+  stringsAsFactors = FALSE
+)
+
+add_event <- function(stage, severity, status, message) {
+  workflow_events <<- rbind(
+    workflow_events,
+    data.frame(
+      stage = stage,
+      severity = severity,
+      status = status,
+      message = message,
+      stringsAsFactors = FALSE
+    )
+  )
+}
+
 request_json <- function(url, query) {
   request <- httr2::request(url) |>
     httr2::req_url_query(!!!query) |>
@@ -109,6 +130,8 @@ characteristics <- data.frame(
 
 if (!skip_characteristics && length(sample_records) > 0L) {
   cat("Extracting sample characteristics from GEO SOFT file...\n")
+  characteristics_status <- "OK"
+  characteristics_message <- ""
   characteristics <- tryCatch({
     gse_soft <- GEOquery::getGEO(
       accession,
@@ -153,12 +176,49 @@ if (!skip_characteristics && length(sample_records) > 0L) {
       )
     }
   }, error = function(e) {
-    cat("Warning: Could not extract sample characteristics:", conditionMessage(e), "\n")
+    characteristics_status <<- "FAILED"
+    characteristics_message <<- conditionMessage(e)
+    cat("Warning: Could not extract sample characteristics:", characteristics_message, "\n")
+    add_event(
+      "sample_characteristics",
+      "error",
+      "FAILED",
+      characteristics_message
+    )
     data.frame(
       gsm = character(), characteristic = character(), value = character(),
       stringsAsFactors = FALSE
     )
   })
+} else if (skip_characteristics && length(sample_records) > 0L) {
+  characteristics_status <- "SKIPPED"
+  characteristics_message <- "SOFT sample-characteristics extraction was skipped by --no-characteristics."
+  add_event(
+    "sample_characteristics",
+    "warning",
+    "SKIPPED",
+    characteristics_message
+  )
+} else {
+  characteristics_status <- "NO_SAMPLES"
+  characteristics_message <- "No sample records were available for characteristic extraction."
+  add_event(
+    "sample_characteristics",
+    "error",
+    "NO_SAMPLES",
+    characteristics_message
+  )
+}
+
+if (identical(characteristics_status, "OK") && length(sample_records) > 0L && nrow(characteristics) == 0L) {
+  characteristics_status <- "EMPTY"
+  characteristics_message <- "No structured characteristics were extracted from GEO SOFT."
+  add_event(
+    "sample_characteristics",
+    "warning",
+    "EMPTY",
+    characteristics_message
+  )
 }
 
 if (nrow(characteristics) > 0L) {
@@ -217,6 +277,8 @@ if (superseries_warning) {
 # ── Supplementary file index ─────────────────────────────────────────────
 
 cat("Listing GEO supplementary files...\n")
+supplements_status <- "OK"
+supplements_message <- ""
 supplements <- tryCatch(
   GEOquery::getGEOSuppFiles(
     accession,
@@ -225,15 +287,45 @@ supplements <- tryCatch(
     fetch_files = FALSE
   ),
   error = function(error) {
-    data.frame(error = conditionMessage(error), stringsAsFactors = FALSE)
+    supplements_status <<- "FAILED"
+    supplements_message <<- conditionMessage(error)
+    add_event(
+      "supplements",
+      "error",
+      "FAILED",
+      supplements_message
+    )
+    data.frame(
+      status = "SUPPLEMENT_QUERY_FAILED",
+      message = supplements_message,
+      stringsAsFactors = FALSE
+    )
   }
 )
+supplement_rows <- rownames(supplements)
 supplements <- data.frame(supplements, check.names = FALSE)
-if (ncol(supplements) == 0L) {
+if (!identical(supplements_status, "FAILED") && (ncol(supplements) == 0L || nrow(supplements) == 0L)) {
+  supplements_status <- "NO_SUPPLEMENT_FILES"
+  supplements_message <- "GEOquery returned no series-level supplementary files."
+  add_event(
+    "supplements",
+    "info",
+    "NO_SUPPLEMENT_FILES",
+    supplements_message
+  )
   supplements <- data.frame(
     status = "NO_SUPPLEMENT_FILES",
-    message = "GEOquery returned no series-level supplementary files.",
+    message = supplements_message,
     stringsAsFactors = FALSE
+  )
+}
+if (identical(supplements_status, "OK") && nrow(supplements) > 0L) {
+  row_is_url <- grepl("^(https?|ftp)://", supplement_rows, ignore.case = TRUE)
+  supplements$supplement_url <- ifelse(row_is_url, supplement_rows, NA_character_)
+  supplements$file_name <- ifelse(
+    row_is_url,
+    basename(supplement_rows),
+    if ("fname" %in% names(supplements)) basename(supplements$fname) else supplement_rows
   )
 }
 if ("size" %in% names(supplements)) {
@@ -337,7 +429,9 @@ routing <- data.frame(
   superseries_or_subseries = superseries_warning,
   n_samples = nrow(samples),
   n_platforms = length(platform_ids),
-  has_supplements = !identical(names(supplements), c("status", "message")),
+  has_supplements = identical(supplements_status, "OK") && nrow(supplements) > 0L,
+  sample_characteristics_status = characteristics_status,
+  supplement_status = supplements_status,
   likely_scRNA = grepl(
     "single.cell|scrna|scRNA|10x|droplet|smart-seq",
     assay_str, ignore.case = TRUE
@@ -371,13 +465,54 @@ utils::write.table(
 now_utc <- format(Sys.time(), tz = "UTC", usetz = TRUE)
 n_chars <- nrow(characteristics)
 n_char_fields <- if (nrow(char_wide) > 0L) ncol(char_wide) - 1L else 0L
+
+if (superseries_warning) {
+  add_event(
+    "routing",
+    "warning",
+    "REVIEW_REQUIRED",
+    "SuperSeries/SubSeries relation requires manual review before choosing the analysis unit."
+  )
+}
+
+status_state <- "RESOURCE_INVENTORY_COMPLETE"
+if (nrow(samples) < 1L) {
+  status_state <- "BLOCKED_METADATA"
+} else if (any(workflow_events$severity == "error")) {
+  status_state <- "DISCOVERY_PARTIAL"
+} else if (
+  skip_characteristics ||
+  identical(characteristics_status, "EMPTY") ||
+  superseries_warning
+) {
+  status_state <- "REVIEW_REQUIRED"
+}
+
+if (nrow(workflow_events) == 0L) {
+  workflow_events <- data.frame(
+    stage = "discovery",
+    severity = "info",
+    status = "OK",
+    message = "No discovery warnings or errors were recorded.",
+    stringsAsFactors = FALSE
+  )
+}
+workflow_events$updated_at_utc <- now_utc
+utils::write.table(
+  workflow_events,
+  file.path(run_dir, "workflow_events.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+)
+
 status <- data.frame(
   accession = accession,
-  state = "RESOURCE_INVENTORY_COMPLETE",
+  state = status_state,
   updated_at_utc = now_utc,
   note = paste0(
     "Review metadata and supplement_index.tsv before downloading. ",
     "Extracted characteristics for ", n_chars, " entries across ", n_char_fields, " fields.",
+    " Characteristic status: ", characteristics_status, ".",
+    " Supplement status: ", supplements_status, ".",
     if (superseries_warning) " SuperSeries/SubSeries relation requires manual review." else ""
   ),
   stringsAsFactors = FALSE
@@ -393,7 +528,7 @@ summary_lines <- c(
   "",
   paste("Generated:", now_utc),
   "",
-  "Status: `RESOURCE_INVENTORY_COMPLETE`",
+  paste0("Status: `", status_state, "`"),
   "",
   sprintf("Assay: %s | Samples: %d | Platforms: %s",
           if (is.na(assay_hint)) "unknown" else assay_hint,
@@ -401,6 +536,9 @@ summary_lines <- c(
           if (length(platform_ids) > 0L) paste(platform_ids, collapse = ", ") else "unknown"),
   "",
   paste("Recommended route:", routing$recommended_route),
+  "",
+  paste("Sample characteristics status:", characteristics_status),
+  paste("Supplement status:", supplements_status),
   "",
   "Review the following before selecting an input route:",
   "",
@@ -411,6 +549,7 @@ summary_lines <- c(
   "- `resources/publication_links.tsv` — publication identifiers and open-access URLs",
   "- `resources/routing_hint.tsv` — automatically inferred assay type and route",
   "- `resources/sra_links.tsv` — SRA/BioProject links for raw-data handoff",
+  "- `workflow_events.tsv` — warnings and partial-failure events recorded during discovery",
   "",
   if (superseries_warning) {
     "SuperSeries/SubSeries warning: review related accessions before choosing the analysis unit."
@@ -422,5 +561,5 @@ summary_lines <- c(
 )
 writeLines(summary_lines, file.path(run_dir, "summary.md"), useBytes = TRUE)
 
-cat("RESOURCE_INVENTORY_COMPLETE\n")
+cat(status_state, "\n", sep = "")
 cat(normalizePath(run_dir, winslash = "/", mustWork = TRUE), "\n")
