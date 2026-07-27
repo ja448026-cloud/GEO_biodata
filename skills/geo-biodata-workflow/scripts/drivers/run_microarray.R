@@ -366,7 +366,7 @@ if (mapping_result$coverage_pct < 50) {
 # ── Sample alignment ─────────────────────────────────────────────────────────
 
 sample_map <- read_sample_mapping(sample_path, sample_id_col, contrast_factor)
-aligned <- align_samples(mat, sample_map, sample_id_col)
+aligned <- align_samples(mat, sample_map, sample_id_col, contrast_factor)
 mat <- aligned$matrix
 sample_map <- aligned$metadata
 
@@ -386,7 +386,9 @@ result_df <- fit_result$result
 outputs <- write_limma_outputs(result_df, fit_result$ebayes_fit,
   fit_result$design, fit_result$contrast_matrix,
   contrast_factor, contrast$numerator, contrast$denominator,
-  sample_map, mat_filtered, tables_dir, figures_dir, logs_dir)
+  sample_map, mat_filtered,
+  fit_result$factor_levels_before, fit_result$factor_levels_after, fit_result$factor_reference,
+  tables_dir, figures_dir, logs_dir)
 
 # ── QC checks ────────────────────────────────────────────────────────────────
 

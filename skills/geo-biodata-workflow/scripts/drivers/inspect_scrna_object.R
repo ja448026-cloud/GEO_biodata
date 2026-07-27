@@ -343,9 +343,32 @@ if (ext %in% c("rds")) {
 # ── H5AD path — default backed/HDF5 mode ─────────────────────────────────────
 } else if (ext == "h5ad") {
   if (requireNamespace("anndataR", quietly = TRUE)) {
-    message("Reading H5AD in backed mode via anndataR...")
-    obj <- anndataR::read_h5ad(input_path)
+    message("Reading H5AD in backed/HDF5 mode via anndataR...")
+    obj <- tryCatch(
+      anndataR::read_h5ad(input_path, as = "HDF5AnnData", backed = TRUE, mode = "r"),
+      error = function(e) {
+        # Try alternate API
+        tryCatch(
+          anndataR::read_h5ad(input_path, backed = "r"),
+          error = function(e2) {
+            stop("Cannot open H5AD in backed mode. anndataR API may have changed. ",
+              "Error: ", conditionMessage(e2), call. = FALSE)
+          }
+        )
+      }
+    )
+    # Verify the object is actually backed
+    obj_class <- class(obj)[[1L]]
+    is_backed <- grepl("HDF5|Backed|backed", obj_class, ignore.case = TRUE)
+    if (!is_backed) {
+      warning("anndataR returned ", obj_class, " instead of a backed/HDF5AnnData object. ",
+        "Object may have been fully loaded into memory.", call. = FALSE)
+    }
+
     inventory$object_format <- "AnnData_H5AD_backed"
+    inventory$h5ad_reader <- "anndataR"
+    inventory$h5ad_backend <- if (is_backed) "HDF5_backed" else obj_class
+    inventory$h5ad_mode <- "r"
     inventory$matrix_orientation <- "cells_x_genes"
     inventory$n_cells <- nrow(obj)
     inventory$n_features <- ncol(obj)
@@ -399,10 +422,11 @@ if (ext %in% c("rds")) {
     inventory$feature_metadata_fields <- ncol(obj$var)
 
   } else if (requireNamespace("zellkonverter", quietly = TRUE)) {
-    warning("zellkonverter reads full H5AD into memory. For large objects, install anndataR for backed mode.",
-      call. = FALSE)
-    obj <- zellkonverter::readH5AD(input_path)
-    inventory$object_format <- "SingleCellExperiment_from_H5AD_full"
+    obj <- zellkonverter::readH5AD(input_path, use_hdf5 = TRUE, reader = "R")
+    inventory$object_format <- "SingleCellExperiment_from_H5AD"
+    inventory$h5ad_reader <- "zellkonverter"
+    inventory$h5ad_backend <- "HDF5Array"
+    inventory$h5ad_mode <- "r"
     inventory$matrix_orientation <- "genes_x_cells"
     inventory$n_cells <- ncol(obj)
     inventory$sparse_storage <- if (inherits(SummarizedExperiment::assay(obj, 1L), "sparseMatrix")) "sparse" else "dense"

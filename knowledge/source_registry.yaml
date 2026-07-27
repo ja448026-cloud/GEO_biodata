@@ -6,6 +6,9 @@ source_tiers:
   geo_sample_metadata:
     rank: 2
     description: GEO/GSM metadata and structured sample characteristics.
+  public_metadata:
+    rank: 2
+    description: Public metadata from GEO/NCBI/EMBL without direct author submission.
   publication_supplement:
     rank: 2
     description: Open supplementary tables or methods linked from PMID/PMCID.

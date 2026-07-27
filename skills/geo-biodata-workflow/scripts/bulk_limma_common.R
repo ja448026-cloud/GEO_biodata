@@ -20,12 +20,34 @@ detect_interaction <- function(design_formula) {
     grepl("\\*", terms_str[length(terms_str)])
 }
 
+# ── Contrast factor preparation (relevel denominator as reference) ──────────
+
+prepare_contrast_factor <- function(sample_map, factor_name, denominator) {
+  x <- factor(sample_map[[factor_name]])
+  levels_before <- levels(x)
+
+  if (!denominator %in% levels_before) {
+    stop("Denominator '", denominator, "' not found in factor '", factor_name,
+      "' levels: ", paste(levels_before, collapse = ", "), call. = FALSE)
+  }
+
+  sample_map[[factor_name]] <- stats::relevel(x, ref = denominator)
+  levels_after <- levels(sample_map[[factor_name]])
+
+  list(
+    sample_map = sample_map,
+    levels_before = levels_before,
+    levels_after = levels_after,
+    reference = denominator
+  )
+}
+
 # ── Explicit contrast matrix builder ──────────────────────────────────────────
 
 build_contrast_matrix <- function(design, factor, numerator, denominator, sample_map) {
-  # Construct an explicit contrast matrix with one column: numerator - denominator.
-  # Returns a matrix suitable for limma::contrasts.fit().
-  # Verifies factor levels exist; does NOT guess coefficients.
+  # After prepare_contrast_factor() has releveled the factor,
+  # denominator is the reference level (intercept).
+  # The numerator coefficient is simply paste0(factor, numerator).
 
   if (!factor %in% names(sample_map)) {
     stop("Contrast factor '", factor, "' not found in sample mapping columns: ",
@@ -33,7 +55,7 @@ build_contrast_matrix <- function(design, factor, numerator, denominator, sample
   }
 
   factor_values <- as.character(sample_map[[factor]])
-  factor_levels <- unique(factor_values)
+  factor_levels <- levels(factor(sample_map[[factor]]))
 
   if (!numerator %in% factor_levels) {
     stop("Contrast numerator '", numerator, "' not found in factor '",
@@ -44,40 +66,22 @@ build_contrast_matrix <- function(design, factor, numerator, denominator, sample
       factor, "' levels: ", paste(factor_levels, collapse = ", "), call. = FALSE)
   }
 
-  # Find the coefficient column names in design for each factor level
-  coef_numerator <- paste0(factor, numerator)
-  coef_denominator <- paste0(factor, denominator)
-
-  # R's model.matrix drops the reference level — detect which level is reference
+  # After relevel, denominator IS the reference (first level), so its coefficient
+  # is part of the intercept. The contrast is just the numerator coefficient.
+  numerator_coef <- paste0(factor, numerator)
   design_cols <- colnames(design)
 
-  # Build the contrast: +1 for numerator coefficient, -1 for denominator coefficient
-  # Handle the case where one of them is the reference (intercept)
+  if (!numerator_coef %in% design_cols) {
+    stop("Numerator coefficient '", numerator_coef,
+      "' not found in design matrix columns: ", paste(design_cols, collapse = ", "),
+      ". This should not happen after prepare_contrast_factor(). ",
+      "Check that the design formula includes the contrast factor.",
+      call. = FALSE)
+  }
+
   contrast_vec <- rep(0, ncol(design))
   names(contrast_vec) <- design_cols
-
-  if (coef_numerator %in% design_cols) {
-    contrast_vec[coef_numerator] <- 1
-  } else if (numerator %in% factor_levels) {
-    stop("Contrast numerator '", numerator,
-      "' appears to be the reference level. ",
-      "limma contrasts.fit requires non-reference numerator coefficient. ",
-      "Available coefficients: ", paste(design_cols, collapse = ", "),
-      ". Consider re-leveling the factor.", call. = FALSE)
-  } else {
-    stop("Cannot resolve numerator coefficient for '", numerator,
-      "'. Design columns: ", paste(design_cols, collapse = ", "), call. = FALSE)
-  }
-
-  if (coef_denominator %in% design_cols) {
-    contrast_vec[coef_denominator] <- -1
-  } else if (denominator %in% factor_levels) {
-    # denominator is the reference level — contrast is just numerator coefficient alone
-    message("Denominator '", denominator, "' is the reference level. Contrast tests numerator coefficient directly.")
-  } else {
-    stop("Cannot resolve denominator coefficient for '", denominator,
-      "'. Design columns: ", paste(design_cols, collapse = ", "), call. = FALSE)
-  }
+  contrast_vec[numerator_coef] <- 1
 
   contrast_name <- paste(numerator, "vs", denominator, sep = "_")
   cm <- matrix(contrast_vec, ncol = 1L, dimnames = list(design_cols, contrast_name))
@@ -112,7 +116,7 @@ read_sample_mapping <- function(sample_path, sample_id_col, contrast_factor) {
   sample_map
 }
 
-align_samples <- function(mat, sample_map, sample_id_col) {
+align_samples <- function(mat, sample_map, sample_id_col, contrast_factor = NULL) {
   sample_ids <- as.character(sample_map[[sample_id_col]])
   missing_from_matrix <- setdiff(sample_ids, colnames(mat))
   extra_in_matrix <- setdiff(colnames(mat), sample_ids)
@@ -217,8 +221,18 @@ run_limma_de <- function(mat, sample_map, design_formula, contrast) {
       call. = FALSE)
   }
 
+  # Step 1: Relevel so denominator is reference — makes contrast independent of original levels
+  prep <- prepare_contrast_factor(
+    sample_map,
+    factor_name = contrast$factor,
+    denominator = contrast$denominator
+  )
+  sample_map <- prep$sample_map
+
+  # Step 2: Build design matrix
   design <- stats::model.matrix(design_formula, data = sample_map)
 
+  # Step 3: Build explicit contrast matrix (numerator coefficient = 1)
   contrast_matrix <- build_contrast_matrix(
     design = design,
     factor = contrast$factor,
@@ -227,6 +241,7 @@ run_limma_de <- function(mat, sample_map, design_formula, contrast) {
     sample_map = sample_map
   )
 
+  # Step 4: Fit
   fit <- limma::lmFit(mat, design)
   fit2 <- limma::contrasts.fit(fit, contrast_matrix)
   fit2 <- limma::eBayes(fit2, trend = TRUE)
@@ -240,7 +255,10 @@ run_limma_de <- function(mat, sample_map, design_formula, contrast) {
     result = result,
     design = design,
     contrast_matrix = contrast_matrix,
-    contrast_name = contrast_name
+    contrast_name = contrast_name,
+    factor_levels_before = prep$levels_before,
+    factor_levels_after = prep$levels_after,
+    factor_reference = prep$reference
   )
 }
 
@@ -279,7 +297,9 @@ log_fallback <- function(events, stage, fallback_type, trigger, original_method,
 
 write_limma_outputs <- function(result, ebayes_fit, design, contrast_matrix,
                                  contrast_factor, numerator, denominator,
-                                 sample_map, mat, tables_dir, figures_dir, logs_dir) {
+                                 sample_map, mat,
+                                 factor_levels_before, factor_levels_after, factor_reference,
+                                 tables_dir, figures_dir, logs_dir) {
   contrast_name <- paste(numerator, "vs", denominator, sep = "_")
 
   # design_matrix_used.tsv — the actual model.matrix used for fitting
@@ -297,17 +317,45 @@ write_limma_outputs <- function(result, ebayes_fit, design, contrast_matrix,
     sep = "\t", quote = FALSE, row.names = FALSE, na = ""
   )
 
-  # factor_levels_used.tsv
+  # factor_levels_before_relevel.tsv
+  utils::write.table(
+    data.frame(level = factor_levels_before, stringsAsFactors = FALSE),
+    file.path(tables_dir, "factor_levels_before_relevel.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+  )
+
+  # factor_levels_used.tsv (after relevel)
+  lvls <- levels(sample_map[[contrast_factor]])
+  n_samp <- as.integer(table(sample_map[[contrast_factor]]))
   factor_levels <- data.frame(
     factor = contrast_factor,
-    level = levels(sample_map[[contrast_factor]]),
-    n_samples = as.integer(table(sample_map[[contrast_factor]])),
+    level = lvls,
+    n_samples = n_samp,
+    reference = lvls == factor_reference,
     stringsAsFactors = FALSE
   )
   utils::write.table(factor_levels,
     file.path(tables_dir, "factor_levels_used.tsv"),
     sep = "\t", quote = FALSE, row.names = FALSE, na = ""
   )
+
+  # contrast_resolution.txt
+  resolution_lines <- c(
+    paste("Contrast factor:", contrast_factor),
+    paste("Numerator:", numerator),
+    paste("Denominator (releveled as reference):", denominator),
+    "",
+    "Original factor levels:",
+    paste(" ", factor_levels_before),
+    "",
+    "After stats::relevel(ref = denominator):",
+    paste(" ", factor_levels_after),
+    "",
+    paste("Contrast:", numerator, "-", denominator),
+    paste("Design coefficient:", paste0(contrast_factor, numerator)),
+    ""
+  )
+  writeLines(resolution_lines, file.path(logs_dir, "contrast_resolution.txt"), useBytes = TRUE)
 
   # DE table
   de_out <- result

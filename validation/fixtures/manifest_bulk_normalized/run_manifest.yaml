@@ -7,6 +7,15 @@ input:
   location_type: local
   gene_id_type: gene_symbol
   species: human
+  scale:
+    transformed: true
+    transform: log2
+    pseudocount: 1
+    evidence_source: publication_methods
+    evidence_note: "Authors state log2(TPM+1)"
+
+analysis:
+  intent: differential_expression
 
 sample_mapping:
   file: resources/sample_mapping_reviewed.tsv

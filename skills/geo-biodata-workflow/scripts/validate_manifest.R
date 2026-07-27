@@ -261,64 +261,93 @@ if (route %in% c("bulk_normalized", "microarray_series_matrix")) {
 }
 
 # ── Agent adjudication gate ──────────────────────────────────────────────────
-decision_path <- file.path(manifest_dir, "resources", "analysis_decisions.tsv")
-if (file.exists(decision_path)) {
-  decision <- tryCatch(
-    utils::read.delim(decision_path, stringsAsFactors = FALSE, check.names = FALSE),
-    error = function(e) NULL
-  )
-  if (!is.null(decision) && nrow(decision) > 0L) {
-    # Verify selected route matches manifest
-    if ("selected_value" %in% names(decision)) {
-      if (decision$selected_value[[1L]] != route) {
-        add_error("analysis_decisions selected_value '", decision$selected_value[[1L]],
-          "' does not match manifest route '", route, "'.")
+decision_record <- manifest$review$decision_record %||% ""
+decision_path <- if (nzchar(decision_record)) resolve_manifest_path(decision_record) else ""
+# Only run agent gate for agent_adjudicated review mode
+if (identical(manifest$review$mode %||% "", "agent_adjudicated")) {
+  if (!nzchar(decision_path) || !file.exists(decision_path)) {
+    add_error("review.decision_record '", decision_record, "' does not exist or is empty.")
+  } else {
+    decision <- tryCatch(
+      utils::read.delim(decision_path, stringsAsFactors = FALSE, check.names = FALSE),
+      error = function(e) NULL
+    )
+    if (is.null(decision) || nrow(decision) == 0L) {
+      add_error("analysis_decisions.tsv is empty or unreadable.")
+    } else {
+      # Required columns
+      required_cols <- c("selected_value", "confidence", "source_tier",
+        "decision_rule", "requires_user_input", "conflicting_evidence")
+      missing_cols <- setdiff(required_cols, names(decision))
+      if (length(missing_cols) > 0L) {
+        add_error("analysis_decisions missing required columns: ", paste(missing_cols, collapse = ", "))
       }
-    }
-    # requires_user_input must be FALSE for automatic analysis
-    if ("requires_user_input" %in% names(decision)) {
-      if (isTRUE(decision$requires_user_input[[1L]]) || identical(tolower(as.character(decision$requires_user_input[[1L]])), "true")) {
-        add_error("analysis_decisions requires_user_input is TRUE; manual review required before analysis.")
+
+      # selected_value must match manifest route
+      if ("selected_value" %in% names(decision)) {
+        if (decision$selected_value[[1L]] != route) {
+          add_error("analysis_decisions selected_value '", decision$selected_value[[1L]],
+            "' does not match manifest route '", route, "'.")
+        }
       }
-    }
-    # Confidence threshold
-    autonomy <- manifest$autonomy$mode %||% "balanced"
-    min_confidence <- switch(autonomy, conservative = 0.90, balanced = 0.75, autonomous = 0.60)
-    if ("confidence" %in% names(decision)) {
-      dec_conf <- as.numeric(decision$confidence[[1L]])
-      if (!is.na(dec_conf) && dec_conf < min_confidence) {
-        add_error(sprintf("Decision confidence %.2f below autonomy mode '%s' threshold %.2f.",
-          dec_conf, autonomy, min_confidence))
+
+      # requires_user_input must be FALSE
+      if ("requires_user_input" %in% names(decision)) {
+        if (isTRUE(decision$requires_user_input[[1L]]) ||
+            identical(tolower(as.character(decision$requires_user_input[[1L]])), "true")) {
+          add_error("analysis_decisions requires_user_input is TRUE.")
+        }
       }
-    }
-    # Conflicting evidence must be empty or resolved
-    if ("conflicting_evidence" %in% names(decision)) {
-      conflicts <- decision$conflicting_evidence[[1L]]
-      if (!is.null(conflicts) && !is.na(conflicts) &&
-          nzchar(as.character(conflicts)) &&
-          !grepl("resolved", tolower(as.character(conflicts)))) {
-        add_error("analysis_decisions has unresolved conflicting_evidence: ", as.character(conflicts))
+
+      # Confidence threshold (hard error)
+      autonomy <- manifest$autonomy$mode %||% "balanced"
+      min_confidence <- switch(autonomy, conservative = 0.90, balanced = 0.75, autonomous = 0.60)
+      if ("confidence" %in% names(decision)) {
+        dec_conf <- as.numeric(decision$confidence[[1L]])
+        if (is.na(dec_conf) || dec_conf < min_confidence) {
+          add_error(sprintf("Decision confidence %.2f below autonomy '%s' threshold %.2f.",
+            dec_conf %||% 0, autonomy, min_confidence))
+        }
       }
-    }
-    # Source tier minimum
-    if ("source_tier" %in% names(decision)) {
-      source_registry <- find_repo_file(c(getwd(), manifest_dir, script_dir), file.path("knowledge", "source_registry.yaml"))
-      valid_tiers <- if (!is.na(source_registry)) {
-        src <- yaml::read_yaml(source_registry)
-        names(src$source_tiers) %||% character()
-      } else {
-        c("author_processed_matrix", "geo_sample_metadata", "publication_supplement", "filename_hint", "raw_accession", "public_metadata")
+
+      # Conflicting evidence must be resolved (hard error)
+      if ("conflicting_evidence" %in% names(decision)) {
+        conflicts <- decision$conflicting_evidence[[1L]]
+        if (!is.null(conflicts) && !is.na(conflicts) &&
+            nzchar(as.character(conflicts)) &&
+            !grepl("resolved", tolower(as.character(conflicts)))) {
+          add_error("analysis_decisions has unresolved conflicting_evidence.")
+        }
       }
-      if (!decision$source_tier[[1L]] %in% valid_tiers) {
-        add_warning("analysis_decisions source_tier '", decision$source_tier[[1L]], "' not in registered tiers: ",
-          paste(valid_tiers, collapse = ", "))
+
+      # Source tier must be in registry (hard error)
+      if ("source_tier" %in% names(decision)) {
+        source_registry <- find_repo_file(c(getwd(), manifest_dir, script_dir), file.path("knowledge", "source_registry.yaml"))
+        valid_tiers <- if (!is.na(source_registry)) {
+          src <- yaml::read_yaml(source_registry)
+          names(src$source_tiers) %||% character()
+        } else {
+          character()
+        }
+        if (length(valid_tiers) > 0L && !decision$source_tier[[1L]] %in% valid_tiers) {
+          add_error("analysis_decisions source_tier '", decision$source_tier[[1L]], "' not in registered tiers.")
+        }
       }
-    }
-    # Decision rule must exist
-    if ("decision_rule" %in% names(decision)) {
-      dr <- decision$decision_rule[[1L]]
-      if (!nzchar(dr %||% "") || grepl("^rules_only", dr)) {
-        add_warning("decision_rule is empty or 'rules_only'; agent adjudication may be incomplete.")
+
+      # Decision rule must not be rules_only (hard error)
+      if ("decision_rule" %in% names(decision)) {
+        dr <- decision$decision_rule[[1L]] %||% ""
+        if (!nzchar(dr) || grepl("^rules_only", dr)) {
+          add_error("decision_rule is empty or 'rules_only' — agent adjudication is required when using agent_adjudicated mode.")
+        }
+      }
+
+      # Timestamp must exist and be after discovery
+      if ("retrieved_at" %in% names(decision) || "retrieved_at_utc" %in% names(decision)) {
+        ts_col <- intersect(c("retrieved_at", "retrieved_at_utc"), names(decision))[[1L]]
+        if (!nzchar(as.character(decision[[ts_col]][[1L]] %||% ""))) {
+          add_error("Decision record has empty timestamp in column: ", ts_col)
+        }
       }
     }
   }
