@@ -29,12 +29,16 @@ GSE accession -> resource inventory -> input routing -> selective download -> ma
 - A Codex/Claude-compatible skill: `skills/geo-biodata-workflow/`
 - R scripts for deterministic steps:
   - environment check;
+  - dependency profile planning/checking;
   - GEO metadata/sample/supplement discovery;
   - publication supplement lookup;
   - reviewable download-plan generation;
   - guarded GEO supplementary-file download;
   - manifest validation before analysis;
+  - a manifest-driven bulk raw-count driver;
   - a lightweight GSEA template plus deprecated fail-closed bulk/scRNA compatibility markers.
+- Route ontology, dependency profiles, and generic decision rules for repeatable agent adjudication.
+- `knowledge/skill_integration_map.yaml`, which records which reusable bio/ngs method patterns were folded into this workflow and which heavier analyses remain explicit handoffs.
 - Short reference notes for common decisions:
   - input routing;
   - bulk expression and DE/GSEA rules;
@@ -50,7 +54,8 @@ Included:
 - GEO supplementary-file index and selective download.
 - Publication identifiers and open-resource links where available.
 - Manifest-driven readiness checks for bulk RNA-seq, expression matrix, microarray, and scRNA routes.
-- Deprecated all-in-one bulk/scRNA scripts that fail closed until route-specific drivers are implemented.
+- A route-specific `bulk_raw_counts` driver for validated raw integer count matrices.
+- Deprecated all-in-one bulk/scRNA scripts that fail closed and are not automatic entry points.
 - Basic preranked GSEA with `fgsea`.
 - GO/KEGG/Reactome/MSigDB enrichment guidance.
 - Single-cell QC, clustering, author-object review, and marker diagnostics as route-specific design guidance.
@@ -99,6 +104,13 @@ On Windows PowerShell:
 $env:ENTREZ_EMAIL = "your_email@example.org"
 ```
 
+Dependency profiles are declared in `dependency_profiles.yaml`. To inspect a profile without installing heavy packages:
+
+```powershell
+Rscript skills\geo-biodata-workflow\scripts\bootstrap_environment.R --profile core --plan
+Rscript skills\geo-biodata-workflow\scripts\bootstrap_environment.R --profile bulk --check
+```
+
 ## Quick start without installing the skill
 
 From the repository root:
@@ -120,6 +132,8 @@ runs/GSE000000/resources/sample_characteristics.tsv
 runs/GSE000000/resources/supplement_index.tsv
 runs/GSE000000/resources/routing_hint.tsv
 runs/GSE000000/resources/routing_evidence.tsv
+runs/GSE000000/resources/route_candidates.tsv
+runs/GSE000000/resources/analysis_decisions.tsv
 runs/GSE000000/resources/publication_links.tsv
 runs/GSE000000/resources/sra_links.tsv
 runs/GSE000000/workflow_events.tsv
@@ -166,14 +180,15 @@ Expected behavior:
 1. Create one accession-specific run directory.
 2. Check the R environment.
 3. Run GEO/resource discovery before downloading expression data.
-4. Review metadata, sample characteristics, supplements, article links, species, assay type, and biological unit.
+4. Review metadata, sample characteristics, supplements, route candidates, analysis decisions, article links, species, assay type, and biological unit.
 5. Select one route:
-   - bulk counts;
-   - normalized/microarray bulk;
-   - scRNA count/object;
-   - author-processed object;
-   - metadata-only;
-   - raw-only handoff.
+   - `bulk_raw_counts`;
+   - `bulk_normalized`;
+   - `microarray_series_matrix`;
+   - `scrna_raw_counts`;
+   - `scrna_author_object`;
+   - `metadata_only`;
+   - `raw_fastq_handoff`.
 6. Generate a download plan, review it, and download only `reviewed=TRUE` route-relevant files.
 7. Preserve raw downloads unchanged and record hashes.
 8. Create `run_manifest.yaml` and validate it before any statistical analysis.
@@ -215,8 +230,17 @@ geo_biodata_workflow/
   AGENTS.md
   README.md
   PUBLIC_MVP_PLAN.md
+  dependency_profiles.yaml
+  containers/
   schemas/
+    route_ontology.yaml
     run_manifest.schema.yaml
+  knowledge/
+    decision_rules/
+      bulk_input_scale.yaml
+      scrna_post_count_qc.yaml
+    source_registry.yaml
+    skill_integration_map.yaml
   templates/
     run_manifest.example.yaml
   skills/
@@ -231,12 +255,15 @@ geo_biodata_workflow/
         basic-scrna.md
         scrna-reusable-rules-and-markers.md
       scripts/
+        bootstrap_environment.R
         check_environment.R
         discover_geo.R
         collect_publication_supplements.R
         generate_download_plan.R
         download_geo_supp.R
         validate_manifest.R
+        drivers/
+          run_bulk_counts.R
         analyze_bulk_template.R
         run_gsea_template.R
         analyze_scrna_template.R
@@ -265,6 +292,8 @@ Each GEO accession should produce a self-contained run directory:
     publication_supplements.tsv
     routing_hint.tsv
     routing_evidence.tsv
+    route_candidates.tsv
+    analysis_decisions.tsv
     sra_links.tsv
   plans/
     download_plan.tsv
@@ -305,22 +334,25 @@ Do not silently turn a blocked state into an analysis result.
 
 | Evidence found | Recommended route |
 |---|---|
-| Integer-like gene-by-sample matrix with clear groups | Bulk counts |
-| ExpressionSet, microarray series matrix, or log-normalized expression | Normalized bulk or microarray |
-| MTX/H5 count matrix, count-bearing H5AD, or count-bearing Seurat object | scRNA count workflow |
-| Author Seurat/H5AD object with labels but uncertain raw counts | Author-processed object review |
-| SRA/FASTQ only | `RAW_COMPUTE_REQUIRED` handoff |
-| Missing groups, donor identity, or sample mapping | `BLOCKED_METADATA` or EDA only |
+| Integer-like gene-by-sample matrix with clear groups | `bulk_raw_counts` |
+| Log-normalized expression, TPM, FPKM, CPM, or similar matrix | `bulk_normalized` |
+| ExpressionSet or microarray series matrix | `microarray_series_matrix` |
+| MTX/H5 count matrix, count-bearing H5AD, or count-bearing Seurat object | `scrna_raw_counts` |
+| Author Seurat/H5AD/RDS object with labels but uncertain raw counts | `scrna_author_object` |
+| SRA/FASTQ only | `raw_fastq_handoff` |
+| Missing groups, donor identity, or sample mapping | `metadata_only`, `BLOCKED_METADATA`, or EDA-only review |
 
 When a GEO record is a SuperSeries or SubSeries, review related accessions before choosing the analysis unit.
 
 ## Basic analysis outputs
 
-The previous all-in-one bulk and scRNA templates are deprecated and fail closed. They remain in the tree as compatibility markers while route-specific manifest-driven drivers are developed. Do not use them as automatic entry points.
+The previous all-in-one bulk and scRNA templates are deprecated and fail closed. They remain in the tree as compatibility markers. Use route-specific manifest-driven drivers instead.
 
-Bulk route:
+Bulk raw-count route (`scripts/drivers/run_bulk_counts.R`):
 
 - `sample_mapping_used.tsv`
+- `design_matrix.tsv`
+- `library_sizes.tsv`
 - `pca_coordinates.tsv`
 - `de_results_<contrast>.tsv`
 - `bulk_library_sizes.pdf`
@@ -381,6 +413,8 @@ The smoke test verifies:
 - GEO discovery without expression-data download;
 - guarded refusal of unrestricted supplementary download and unreviewed download plans;
 - manifest validation success and failure gates;
+- dependency profile planning;
+- optional bulk raw-count driver execution when DESeq2 is available;
 - absence of deprecated dangerous analysis patterns;
 - absence of local/private path strings in the public project tree.
 

@@ -1,56 +1,101 @@
-schema_version: 0.2
+schema_version: 0.3
+
+route_ontology:
+  bulk_raw_counts:
+    input_types: [raw_integer_counts]
+    requires_input_file: true
+    requires_sample_mapping: true
+    requires_design: true
+    requires_contrast: true
+    content_checks: [matrix_columns_match_sample_mapping, nonnegative_integer_counts, finite_values, biological_replicates]
+  bulk_normalized:
+    input_types: [log_normalized, normalized_expression, tpm, fpkm, cpm]
+    requires_input_file: true
+    requires_sample_mapping: true
+    requires_design: false
+    requires_contrast: false
+    content_checks: [matrix_columns_match_sample_mapping, finite_values]
+  microarray_series_matrix:
+    input_types: [expression_set, series_matrix, microarray_intensity]
+    requires_input_file: true
+    requires_sample_mapping: true
+    requires_design: true
+    requires_contrast: true
+    content_checks: [matrix_columns_match_sample_mapping, finite_values, biological_replicates]
+  scrna_raw_counts:
+    input_types: [mtx_counts, h5_counts, count_bearing_h5ad, count_bearing_seurat]
+    requires_input_file: true
+    requires_sample_mapping: false
+    requires_design: false
+    requires_contrast: false
+    content_checks: [local_file_exists]
+  scrna_author_object:
+    input_types: [author_h5ad, author_seurat, author_processed_object]
+    requires_input_file: true
+    requires_sample_mapping: false
+    requires_design: false
+    requires_contrast: false
+    content_checks: [local_file_exists]
+  metadata_only:
+    input_types: [metadata_only]
+    requires_input_file: false
+    requires_sample_mapping: false
+    requires_design: false
+    requires_contrast: false
+    content_checks: []
+  raw_fastq_handoff:
+    input_types: [sra_accessions, fastq_only, raw_compute_required]
+    requires_input_file: false
+    requires_sample_mapping: false
+    requires_design: false
+    requires_contrast: false
+    content_checks: []
+
 required_top_level:
   - accession
   - route
   - input
-  - sample_mapping
-  - design
   - review
-allowed_routes:
-  bulk_raw_counts:
-    input_types:
-      - raw_integer_counts
-  bulk_normalized:
-    input_types:
-      - log_normalized
-      - normalized_expression
-      - tpm
-      - fpkm
-      - cpm
-  microarray_series_matrix:
-    input_types:
-      - expression_set
-      - series_matrix
-      - microarray_intensity
-  scrna_raw_counts:
-    input_types:
-      - mtx_counts
-      - h5_counts
-      - count_bearing_h5ad
-      - count_bearing_seurat
-  scrna_author_object:
-    input_types:
-      - author_h5ad
-      - author_seurat
-      - author_processed_object
-required_review_flags:
-  - input_type_confirmed
-  - sample_mapping_confirmed
-  - design_confirmed
-  - contrast_confirmed
+
 required_input_fields:
-  - file
   - input_type
+  - location_type
   - species
+
+allowed_location_types:
+  - local
+  - remote
+  - deferred
+
 required_sample_mapping_fields:
   - file
   - biological_unit
   - sample_id_column
   - group_column
+
 required_design_fields:
   - formula
   - contrast
+
 required_contrast_fields:
   - factor
   - numerator
   - denominator
+
+review_modes:
+  manual:
+    required_flags:
+      - input_type_confirmed
+      - sample_mapping_confirmed
+      - design_confirmed
+      - contrast_confirmed
+  agent_adjudicated:
+    required_fields:
+      - decision_record
+      - unresolved_conflicts
+      - evidence_threshold_passed
+
+autonomy_modes:
+  - conservative
+  - balanced
+  - autonomous

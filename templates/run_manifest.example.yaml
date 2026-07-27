@@ -4,6 +4,7 @@ route: bulk_raw_counts
 input:
   file: raw/counts.tsv.gz
   input_type: raw_integer_counts
+  location_type: local
   gene_id_type: ensembl_gene_id
   species: human
 

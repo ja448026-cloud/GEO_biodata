@@ -422,6 +422,19 @@ utils::write.table(
 # ── Routing hint ─────────────────────────────────────────────────────────
 
 assay_str <- if (is.na(assay_hint)) "" else tolower(assay_hint)
+infer_primary_route <- function(assay_text) {
+  if (grepl("single.cell|scrna|10x|droplet|smart-seq", assay_text, ignore.case = TRUE)) {
+    return("scrna_raw_counts")
+  }
+  if (grepl("array", assay_text, ignore.case = TRUE)) {
+    return("microarray_series_matrix")
+  }
+  if (grepl("high.throughput|rna.seq|rna-seq|sequencing", assay_text, ignore.case = TRUE)) {
+    return("metadata_only")
+  }
+  "metadata_only"
+}
+
 routing <- data.frame(
   accession = accession,
   assay_type = if (is.na(assay_hint)) "unknown" else assay_hint,
@@ -440,18 +453,7 @@ routing <- data.frame(
     "expression.profiling.by.array|expression.profiling.by.high.throughput",
     assay_str, ignore.case = TRUE
   ),
-  recommended_route = {
-    if (grepl("single.cell|scrna|scRNA|10x|droplet|smart-seq",
-              assay_str, ignore.case = TRUE)) {
-      "scRNA"
-    } else if (grepl("array", assay_str, ignore.case = TRUE)) {
-      "bulk_microarray"
-    } else if (grepl("high.throughput", assay_str, ignore.case = TRUE)) {
-      "bulk_counts_or_normalized"
-    } else {
-      "review_metadata"
-    }
-  },
+  recommended_route = infer_primary_route(assay_str),
   stringsAsFactors = FALSE
 )
 utils::write.table(
@@ -486,10 +488,34 @@ if (nzchar(assay_str)) {
     0.35,
     TRUE,
     FALSE,
-    if (routing$recommended_route == "review_metadata") 0.3 else 0.65,
-    routing$recommended_route == "review_metadata",
+    if (routing$recommended_route == "metadata_only") 0.3 else 0.65,
+    routing$recommended_route == "metadata_only",
     "GDS assay type is useful for broad routing but does not prove input scale or sample mapping."
   )
+  if (grepl("high.throughput|rna.seq|rna-seq|sequencing", assay_str, ignore.case = TRUE)) {
+    add_evidence(
+      "bulk_raw_counts",
+      "gds_assay_type",
+      routing$assay_type,
+      0.2,
+      TRUE,
+      FALSE,
+      0.35,
+      TRUE,
+      "Sequencing assay type can support a raw-count route only after content inspection confirms integer counts."
+    )
+    add_evidence(
+      "bulk_normalized",
+      "gds_assay_type",
+      routing$assay_type,
+      0.15,
+      TRUE,
+      FALSE,
+      0.3,
+      TRUE,
+      "Sequencing assay type can also produce normalized author matrices; scale remains unresolved."
+    )
+  }
 }
 if (identical(characteristics_status, "OK") && nrow(characteristics) > 0L) {
   add_evidence(
@@ -505,7 +531,7 @@ if (identical(characteristics_status, "OK") && nrow(characteristics) > 0L) {
   )
 } else {
   add_evidence(
-    "review_metadata",
+    "metadata_only",
     "sample_characteristics",
     characteristics_status,
     0.3,
@@ -525,14 +551,18 @@ if (identical(supplements_status, "OK") && nrow(supplements) > 0L) {
     add_evidence("scrna_author_object", "supplement_filenames", supplement_text, 0.4, TRUE, FALSE, 0.65, TRUE, "Author object filenames require inspection of raw-count layers and metadata.")
   }
   if (grepl("count|counts|matrix|expression|series", supplement_text)) {
-    add_evidence("bulk_counts_or_normalized", "supplement_filenames", supplement_text, 0.3, TRUE, FALSE, 0.5, TRUE, "Expression-like filenames do not prove raw counts versus normalized values.")
+    add_evidence("bulk_raw_counts", "supplement_filenames", supplement_text, 0.25, TRUE, FALSE, 0.45, TRUE, "Counts-like filenames require content inspection before raw-count DE.")
+    add_evidence("bulk_normalized", "supplement_filenames", supplement_text, 0.2, TRUE, FALSE, 0.4, TRUE, "Expression-like filenames may indicate normalized values rather than raw counts.")
+  }
+  if (grepl("series_matrix|matrix\\.txt|gse.*series", supplement_text)) {
+    add_evidence("microarray_series_matrix", "supplement_filenames", supplement_text, 0.25, TRUE, FALSE, 0.45, TRUE, "Series matrix filenames require platform and normalization review.")
   }
 } else {
-  add_evidence("review_metadata", "supplements", supplements_status, 0.2, FALSE, FALSE, 0.4, TRUE, "No downloadable supplement evidence was available from GEO series-level listing.")
+  add_evidence("metadata_only", "supplements", supplements_status, 0.2, FALSE, FALSE, 0.4, TRUE, "No downloadable supplement evidence was available from GEO series-level listing.")
 }
 if (superseries_warning) {
   add_evidence(
-    "review_metadata",
+    "metadata_only",
     "series_relation",
     series_relation,
     0.6,
@@ -544,12 +574,92 @@ if (superseries_warning) {
   )
 }
 if (length(evidence_rows) == 0L) {
-  add_evidence("review_metadata", "none", "no routing evidence generated", 0, FALSE, FALSE, 0, TRUE, "Review GEO page manually.")
+  add_evidence("metadata_only", "none", "no routing evidence generated", 0, FALSE, FALSE, 0, TRUE, "Review GEO page manually.")
 }
 routing_evidence <- do.call(rbind, evidence_rows)
 utils::write.table(
   routing_evidence,
   file.path(resources_dir, "routing_evidence.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+)
+
+global_route_review_required <- (
+  skip_characteristics ||
+    !identical(characteristics_status, "OK") ||
+    superseries_warning ||
+    !identical(supplements_status, "OK")
+)
+
+route_candidates <- do.call(
+  rbind,
+  lapply(split(routing_evidence, routing_evidence$candidate_route), function(df) {
+    support_score <- sum(df$evidence_weight[df$supports], na.rm = TRUE)
+    conflict_score <- sum(df$evidence_weight[df$conflicts], na.rm = TRUE)
+    confidence <- max(df$confidence, na.rm = TRUE)
+    review_required <- global_route_review_required || any(df$review_required) || conflict_score > 0 || df$candidate_route[[1L]] == "metadata_only"
+    confidence_label <- if (confidence >= 0.75 && !review_required) {
+      "high"
+    } else if (confidence >= 0.5) {
+      "medium"
+    } else {
+      "low"
+    }
+    data.frame(
+      route = df$candidate_route[[1L]],
+      support_score = round(support_score, 3),
+      conflict_score = round(conflict_score, 3),
+      confidence = round(confidence, 3),
+      confidence_label = confidence_label,
+      review_required = review_required,
+      evidence_sources = paste(unique(df$evidence_source), collapse = ";"),
+      note = paste(unique(df$note), collapse = " | "),
+      stringsAsFactors = FALSE
+    )
+  })
+)
+route_candidates <- route_candidates[order(-route_candidates$support_score, route_candidates$conflict_score, route_candidates$route), ]
+route_candidates$decision <- "secondary"
+if (nrow(route_candidates) > 0L) {
+  if (all(route_candidates$review_required)) {
+    route_candidates$decision[[1L]] <- "review_required"
+  } else {
+    route_candidates$decision[[1L]] <- "selected"
+  }
+}
+utils::write.table(
+  route_candidates,
+  file.path(resources_dir, "route_candidates.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+)
+
+selected_candidate <- if (nrow(route_candidates) > 0L) route_candidates$route[[1L]] else "metadata_only"
+analysis_decisions <- data.frame(
+  decision_id = paste0(accession, "_route_candidate_001"),
+  decision_type = "route_candidate",
+  selected_value = selected_candidate,
+  alternative_values = paste(setdiff(route_candidates$route, selected_candidate), collapse = ";"),
+  evidence_sources = paste(unique(routing_evidence$evidence_source), collapse = ";"),
+  source_tier = "public_metadata",
+  supporting_text = paste(
+    "Assay hint:", if (is.na(assay_hint)) "unknown" else assay_hint,
+    "| characteristics:", characteristics_status,
+    "| supplements:", supplements_status
+  ),
+  conflicting_evidence = if (any(routing_evidence$conflicts)) {
+    paste(unique(routing_evidence$note[routing_evidence$conflicts]), collapse = " | ")
+  } else {
+    ""
+  },
+  confidence = if (nrow(route_candidates) > 0L) route_candidates$confidence[[1L]] else 0,
+  decision_rule = "deterministic_public_metadata_inventory_v0.3",
+  agent_model = "rules_only",
+  retrieved_at_utc = now_utc <- format(Sys.time(), tz = "UTC", usetz = TRUE),
+  requires_user_input = if (nrow(route_candidates) > 0L) route_candidates$review_required[[1L]] else TRUE,
+  stringsAsFactors = FALSE
+)
+utils::write.table(
+  analysis_decisions,
+  file.path(resources_dir, "analysis_decisions.tsv"),
   sep = "\t", quote = FALSE, row.names = FALSE, na = ""
 )
 
@@ -642,6 +752,8 @@ summary_lines <- c(
   "- `resources/publication_links.tsv` — publication identifiers and open-access URLs",
   "- `resources/routing_hint.tsv` — automatically inferred assay type and route",
   "- `resources/routing_evidence.tsv` — evidence rows behind route candidates",
+  "- `resources/route_candidates.tsv` — scored route candidates using the unified route ontology",
+  "- `resources/analysis_decisions.tsv` — deterministic decision record for agent/user adjudication",
   "- `resources/sra_links.tsv` — SRA/BioProject links for raw-data handoff",
   "- `workflow_events.tsv` — warnings and partial-failure events recorded during discovery",
   "",

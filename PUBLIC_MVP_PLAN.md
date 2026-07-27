@@ -17,7 +17,7 @@ Keep deterministic operations as small scripts:
 - publication supplement lookup;
 - reviewable download plans, selective download, and hashes;
 - manifest validation before analysis;
-- optional templates for bulk expression, GSEA, and scRNA first-pass analysis.
+- a manifest-driven `bulk_raw_counts` driver plus optional templates for GSEA and future scRNA first-pass analysis.
 
 Keep method judgment as short references:
 
@@ -55,7 +55,8 @@ Do not include:
 | GEO discovery | metadata, GSM index, supplements, publication links | GEOquery, httr2 |
 | Resource collection | reviewed download plan, manifest, hashes | GEOquery, digest |
 | Analysis readiness | run manifest validation and review gates | yaml |
-| Bulk expression | QC, PCA, correlation, DE, heatmap/MA/volcano | limma, DESeq2, edgeR |
+| `bulk_raw_counts` | QC, PCA, DE, p-value histogram | DESeq2 |
+| `bulk_normalized` / `microarray_series_matrix` | QC, PCA, limma-compatible DE when implemented | limma |
 | Enrichment | ranked-list GSEA and guidance for GO/KEGG/Reactome/MSigDB | fgsea, clusterProfiler |
 | scRNA | QC metrics, clustering, UMAP, markers, author-label comparison | Seurat |
 
@@ -68,7 +69,7 @@ Do not include:
 - The workflow stops explicitly when metadata or inputs are insufficient.
 - Download transfer requires a route-specific plan and reviewed file rows.
 - Statistical analysis requires a validated `run_manifest.yaml`.
-- Deprecated all-in-one analysis templates fail closed until route-specific drivers are implemented.
+- Deprecated all-in-one analysis templates fail closed and the `bulk_raw_counts` route has a manifest-driven driver.
 - CI runs deterministic smoke checks for parseability, guards, manifest validation, and public-tree hygiene.
 - The skill can be installed by another agent without hidden local context.
 

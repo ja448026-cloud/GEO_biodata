@@ -5,6 +5,11 @@ validation/fixtures/**/workflow_status.tsv
 .Rhistory
 .RData
 .Rproj.user/
+renv/library/
+renv/python/
+renv/staging/
+.renv/
+environment_profile_*.tsv
 *.tar
 *.tar.gz
 *.tgz

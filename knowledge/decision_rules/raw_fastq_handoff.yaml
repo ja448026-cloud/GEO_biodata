@@ -1,0 +1,17 @@
+rule_id: raw_fastq_handoff_v0.1
+applies_to: [raw_fastq_handoff]
+principle: Raw sequencing accessions are a handoff target, not a shortcut to matrix-level analysis.
+required_before_raw_processing:
+  - organism
+  - genome_or_transcriptome_reference
+  - sample_sheet
+  - library_layout
+  - strandedness_or_inference_plan
+  - expected_output_matrix_type
+safe_actions:
+  - record SRA/BioProject/ENA accessions
+  - generate an nf-core/fetchngs handoff note
+  - stop with RAW_COMPUTE_REQUIRED when matrix-level inputs are absent
+unsafe_actions:
+  - infer strandedness from filenames alone
+  - start DE or clustering from raw accessions without count generation

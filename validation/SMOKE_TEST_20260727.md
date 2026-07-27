@@ -62,11 +62,11 @@ Validation after plan-first hardening:
 
 - `validation/run_smoke_checks.R`: PASS, including parse checks for all 9 R scripts.
 - Live lightweight discovery smoke with `GSE2553 --no-characteristics`: PASS.
-- The lightweight smoke wrote `REVIEW_REQUIRED`, recorded `sample_characteristics=SKIPPED`, and preserved the route hint `bulk_microarray` without expression-data download.
+- The lightweight smoke wrote `REVIEW_REQUIRED`, recorded `sample_characteristics=SKIPPED`, and preserved a reviewable route hint without expression-data download.
 
 ## Manifest Alignment Hardening
 
-The next-round Codex alignment added an analysis-readiness gate without claiming that route-specific bulk or scRNA drivers are complete.
+The next-round Codex alignment added an analysis-readiness gate and later added a first manifest-driven `bulk_raw_counts` driver. scRNA routes remain review/manifest-first until route-specific drivers are implemented.
 
 Accepted changes:
 
@@ -83,4 +83,4 @@ Validation after manifest alignment:
 
 ## Boundary
 
-This smoke test validates the environment, skill structure, public-resource discovery, output creation, manifest validation, and download guards. It does not claim biological validity for bulk DE, GSEA, or scRNA clustering. The old all-in-one bulk and scRNA templates are deprecated and fail closed until route-specific manifest-driven drivers are implemented.
+This smoke test validates the environment, skill structure, public-resource discovery, output creation, manifest validation, dependency profile planning, guarded downloads, and optional `bulk_raw_counts` driver execution when DESeq2 is available. It does not claim biological validity for bulk DE, GSEA, or scRNA clustering. The old all-in-one bulk and scRNA templates are deprecated and fail closed.

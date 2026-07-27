@@ -16,17 +16,19 @@ Treat this skill as a reusable execution path — a coordination layer over exis
 
 1. Create a new accession-specific run directory under `runs/<GSE>/`. Never mix two GSE studies. Reserve `validation/runs/` for project-maintainer smoke tests only.
 2. Run `scripts/check_environment.R` and record missing optional capabilities.
-3. Run `scripts/discover_geo.R <GSE> <run-dir>` before downloading expression files.
-4. Review the resulting GEO metadata, sample index, supplement index, publication links, species, assay type, sample count, and likely biological unit.
-5. Read `references/routing-and-resources.md` and select exactly one input route.
-6. Generate a route-specific download plan with `scripts/generate_download_plan.R <run-dir> <regex> [reason]`.
-7. Review `plans/download_plan.tsv`, set `reviewed=TRUE` only for files confirmed to match the selected route, then download with `scripts/download_geo_supp.R <download-plan.tsv> <raw-dir>`.
-8. Preserve downloaded files unchanged. Record hashes and analyze copies or derived objects.
-9. Create `run_manifest.yaml` from `templates/run_manifest.example.yaml`; the manifest is the analysis fact source for route, input type, biological unit, design, and contrast.
-10. Validate the manifest with `scripts/validate_manifest.R <run_manifest.yaml>`. Do not run statistical analysis unless the state is `MANIFEST_VALIDATED`.
-11. For bulk or microarray data, read `references/basic-bulk.md` plus `references/bulk-de-gsea-rules.md`; use route-specific manifest-driven drivers when available.
-12. For single-cell data, read `references/basic-scrna.md` plus `references/scrna-reusable-rules-and-markers.md`; keep `scrna_raw_counts` and `scrna_author_object` separate.
-13. Save the input inventory, sample mapping, code, tables, figures, package versions, warnings, and final status.
+3. Use `scripts/bootstrap_environment.R --profile core --plan` or `--check` when dependency state is unclear. Do not install heavy profiles unless explicitly requested.
+4. Run `scripts/discover_geo.R <GSE> <run-dir>` before downloading expression files.
+5. Review the resulting GEO metadata, sample index, supplement index, route candidates, analysis decisions, publication links, species, assay type, sample count, and likely biological unit.
+6. Read `references/routing-and-resources.md`, `knowledge/skill_integration_map.yaml`, and relevant `knowledge/decision_rules/*.yaml`, then select exactly one input route.
+7. Generate a route-specific download plan with `scripts/generate_download_plan.R <run-dir> <regex> [reason]`.
+8. Review `plans/download_plan.tsv`, set `reviewed=TRUE` only for files confirmed to match the selected route, then download with `scripts/download_geo_supp.R <download-plan.tsv> <raw-dir>`.
+9. Preserve downloaded files unchanged. Record hashes and analyze copies or derived objects.
+10. Create `run_manifest.yaml` from `templates/run_manifest.example.yaml`; the manifest is the analysis fact source for route, input type, biological unit, design, and contrast.
+11. Validate the manifest with `scripts/validate_manifest.R <run_manifest.yaml>`. Do not run statistical analysis unless the state is `MANIFEST_VALIDATED`.
+12. For `bulk_raw_counts`, run `scripts/drivers/run_bulk_counts.R <run_manifest.yaml>` only after validation.
+13. For normalized bulk or microarray data, read `references/basic-bulk.md` plus `references/bulk-de-gsea-rules.md`; do not run raw-count models on normalized values.
+14. For single-cell data, read `references/basic-scrna.md` plus `references/scrna-reusable-rules-and-markers.md`; keep `scrna_raw_counts` and `scrna_author_object` separate.
+15. Save the input inventory, sample mapping, code, tables, figures, package versions, warnings, and final status.
 
 ## Allowed outcomes
 
@@ -54,6 +56,8 @@ Do not silently convert a blocked state into an analysis result.
     supplement_index.tsv
     publication_links.tsv
     publication_supplements.tsv  (supplementary links from publisher)
+    route_candidates.tsv
+    analysis_decisions.tsv
     routing_evidence.tsv
   plans/
     download_plan.tsv
@@ -93,9 +97,11 @@ Deprecated template scripts in `scripts/` are retained as traceable compatibilit
 - `analyze_bulk_template.R` — deprecated and fail-closed; do not use as an automatic analysis entry point.
 - `run_gsea_template.R` — lightweight fgsea preranked GSEA template for a named rank vector and local gene sets.
 - `analyze_scrna_template.R` — deprecated and fail-closed; keep raw-count and author-object routes separate.
+- `drivers/run_bulk_counts.R` — manifest-driven DESeq2 driver for verified `bulk_raw_counts`.
 - `marker_utilities.R` — Shared gene signature scoring, generic marker panels, marker-presence checks, and marker table helpers.
 - `generate_download_plan.R` — creates a reviewable `plans/download_plan.tsv` from the supplement index before any file transfer.
 - `validate_manifest.R` — validates `run_manifest.yaml` before analysis and writes `manifest_validation.tsv`.
+- `bootstrap_environment.R` — dependency profile plan/check/install helper; default use should be plan/check.
 
 The deprecated analysis templates intentionally stop immediately. Route-specific drivers should read a validated manifest and must not infer statistical models from filename patterns or expression-value ranges.
 
@@ -104,7 +110,7 @@ The deprecated analysis templates intentionally stop immediately. Route-specific
 - Entry point: one GEO Series accession number.
 - Core language: R.
 - Required packages: GEOquery, Biobase, httr2, jsonlite, digest, yaml.
-- Optional packages: limma, edgeR, DESeq2, ggplot2, pheatmap, fgsea, clusterProfiler, msigdbr, Seurat, Matrix, patchwork.
+- Optional packages: limma, edgeR, DESeq2, ggplot2, pheatmap, fgsea, clusterProfiler, msigdbr, Seurat, Matrix, patchwork. Install by profile from `dependency_profiles.yaml` when practical.
 - Required outputs: series metadata, sample index, supplement index, publication links, download manifest when files are downloaded, workflow status, summary, and diagnostic figures when analysis runs.
 
 ## Upstream tools

@@ -1,0 +1,2 @@
+decision_id	decision_type	selected_value	alternative_values	evidence_sources	source_tier	supporting_text	conflicting_evidence	confidence	decision_rule	agent_model	retrieved_at_utc	requires_user_input
+GSE123456_route_candidate_001	route_candidate	scrna_author_object	scrna_raw_counts	supplement_filenames	author_processed_matrix	Author object placeholder fixture		0.8	test_rule	rules_only	2026-07-27 00:00:00 UTC	FALSE

@@ -27,7 +27,7 @@ expect_status <- function(label, command, args, expected_status) {
 }
 
 cat("== Parse R scripts ==\n")
-r_files <- list.files(script_dir, pattern = "\\.R$", full.names = TRUE)
+r_files <- list.files(script_dir, pattern = "\\.R$", full.names = TRUE, recursive = TRUE)
 for (path in sort(r_files)) {
   parse(file = path)
   cat("PARSE_OK\t", basename(path), "\n", sep = "")
@@ -103,6 +103,20 @@ expect_status(
   0L
 )
 
+expect_status(
+  "Metadata-only manifest",
+  "Rscript",
+  c(file.path(script_dir, "validate_manifest.R"), file.path(repo_root, "validation", "fixtures", "manifest_metadata_only", "run_manifest.yaml")),
+  0L
+)
+
+expect_status(
+  "scRNA author-object manifest",
+  "Rscript",
+  c(file.path(script_dir, "validate_manifest.R"), file.path(repo_root, "validation", "fixtures", "manifest_scrna_author_object", "run_manifest.yaml")),
+  0L
+)
+
 invalid_dir <- file.path(scratch, "manifest_invalid")
 dir.create(invalid_dir, recursive = TRUE, showWarnings = FALSE)
 invalid_manifest <- file.path(invalid_dir, "run_manifest.yaml")
@@ -128,12 +142,59 @@ expect_status(
   1L
 )
 
+missing_input_dir <- file.path(scratch, "manifest_missing_input")
+dir.create(missing_input_dir, recursive = TRUE, showWarnings = FALSE)
+missing_input_manifest <- file.path(missing_input_dir, "run_manifest.yaml")
+missing_input_text <- sub("file: raw/counts.tsv", "file: raw/missing_counts.tsv", valid_text, fixed = TRUE)
+writeLines(missing_input_text, missing_input_manifest, useBytes = TRUE)
+dir.create(file.path(missing_input_dir, "resources"), recursive = TRUE, showWarnings = FALSE)
+invisible(file.copy(
+  file.path(dirname(manifest_fixture), "resources", "sample_mapping_reviewed.tsv"),
+  file.path(missing_input_dir, "resources", "sample_mapping_reviewed.tsv"),
+  overwrite = TRUE
+))
+expect_status(
+  "Missing local input refusal",
+  "Rscript",
+  c(file.path(script_dir, "validate_manifest.R"), missing_input_manifest),
+  1L
+)
+
+cat("== Dependency bootstrap plan ==\n")
+expect_status(
+  "Core dependency plan",
+  "Rscript",
+  c(file.path(script_dir, "bootstrap_environment.R"), "--profile", "core", "--plan"),
+  0L
+)
+
+cat("== Bulk driver optional check ==\n")
+if (all(vapply(c("DESeq2", "ggplot2", "SummarizedExperiment"), requireNamespace, logical(1), quietly = TRUE))) {
+  bulk_dir <- file.path(scratch, "bulk_driver")
+  dir.create(file.path(bulk_dir, "raw"), recursive = TRUE, showWarnings = FALSE)
+  dir.create(file.path(bulk_dir, "resources"), recursive = TRUE, showWarnings = FALSE)
+  invisible(file.copy(manifest_fixture, file.path(bulk_dir, "run_manifest.yaml"), overwrite = TRUE))
+  invisible(file.copy(file.path(dirname(manifest_fixture), "raw", "counts.tsv"), file.path(bulk_dir, "raw", "counts.tsv"), overwrite = TRUE))
+  invisible(file.copy(file.path(dirname(manifest_fixture), "resources", "sample_mapping_reviewed.tsv"), file.path(bulk_dir, "resources", "sample_mapping_reviewed.tsv"), overwrite = TRUE))
+  expect_status(
+    "Bulk raw-count driver",
+    "Rscript",
+    c(file.path(script_dir, "drivers", "run_bulk_counts.R"), file.path(bulk_dir, "run_manifest.yaml")),
+    0L
+  )
+  status <- utils::read.delim(file.path(bulk_dir, "workflow_status.tsv"), stringsAsFactors = FALSE)
+  if (!identical(status$state[[1L]], "BASIC_ANALYSIS_COMPLETE")) {
+    fail("Bulk driver did not produce BASIC_ANALYSIS_COMPLETE.")
+  }
+} else {
+  cat("SKIP\tBulk driver optional check requires DESeq2, ggplot2, and SummarizedExperiment.\n")
+}
+
 cat("== Dangerous-pattern checks ==\n")
-script_text <- unlist(lapply(list.files(script_dir, pattern = "\\.R$", full.names = TRUE), readLines, warn = FALSE))
+script_text <- unlist(lapply(list.files(script_dir, pattern = "\\.R$", full.names = TRUE, recursive = TRUE), readLines, warn = FALSE))
 dangerous_patterns <- c(
   "max\\(vals.*<\\s*50",
-  "as\\.matrix\\(counts_raw\\)",
-  "state\\s*=\\s*\"BASIC_ANALYSIS_COMPLETE\""
+  "as\\.matrix\\(counts_raw\\)"
 )
 for (pattern in dangerous_patterns) {
   if (any(grepl(pattern, script_text))) {

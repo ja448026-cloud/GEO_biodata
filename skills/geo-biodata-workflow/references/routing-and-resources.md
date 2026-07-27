@@ -21,12 +21,13 @@ Check whether the record is a SuperSeries or SubSeries. If related GSE records e
 
 | Evidence | Route | Outcome |
 |---|---|---|
-| Integer-like gene-by-sample matrix plus reviewed sample groups | Bulk counts | Basic bulk QC; differential analysis only if design is clear |
-| ExpressionSet or normalized matrix from a microarray/series matrix | Normalized bulk or microarray | EDA and limma-compatible analysis |
-| MTX/H5 count matrix, count-bearing RDS, or count-bearing H5AD | scRNA counts | Per-sample QC, normalization, PCA, clustering, UMAP, markers |
-| Author Seurat/H5AD object with metadata but uncertain raw layer | Author processed object | Reproduce labels/embeddings and inspect resources; do not claim raw-count QC |
-| FASTQ/SRA only | Raw sequencing | `RAW_COMPUTE_REQUIRED`; optionally prepare an nf-core/fetchngs handoff |
-| Ambiguous sample mapping or missing biological groups | Any | `BLOCKED_METADATA` or EDA only |
+| Integer-like gene-by-sample matrix plus reviewed sample groups | `bulk_raw_counts` | Basic bulk QC and DESeq2 driver if design is clear |
+| Log-normalized expression, TPM, FPKM, CPM, or similar matrix | `bulk_normalized` | EDA and limma-compatible analysis |
+| ExpressionSet, GEO Series Matrix, or microarray intensity matrix | `microarray_series_matrix` | Platform-aware EDA and limma-compatible analysis |
+| MTX/H5 count matrix, count-bearing RDS, or count-bearing H5AD | `scrna_raw_counts` | Per-sample QC, normalization, PCA, clustering, UMAP, markers |
+| Author Seurat/H5AD object with metadata but uncertain raw layer | `scrna_author_object` | Reproduce labels/embeddings and inspect resources; do not claim raw-count QC |
+| FASTQ/SRA only | `raw_fastq_handoff` | Stop with `RAW_COMPUTE_REQUIRED`; optionally prepare an nf-core/fetchngs handoff |
+| Ambiguous sample mapping or missing biological groups | `metadata_only` | `BLOCKED_METADATA` or EDA-only review |
 
 Prefer the smallest author-provided processed resource that preserves the quantities needed for the requested analysis.
 

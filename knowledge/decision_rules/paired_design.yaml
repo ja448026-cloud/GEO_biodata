@@ -1,0 +1,17 @@
+rule_id: paired_design_v0.1
+applies_to: [bulk_raw_counts, bulk_normalized, microarray_series_matrix]
+principle: Paired or blocked designs must be explicit in the manifest formula before analysis.
+signals:
+  - before_after
+  - paired
+  - matched
+  - patient
+  - donor
+  - subject
+required_action:
+  - Add the blocking factor to sample_mapping.
+  - Include the blocking factor in design.formula.
+  - Confirm the contrast factor is estimable after blocking.
+fail_closed_when:
+  - Pair identifiers are implied but unavailable.
+  - Model matrix is not full rank.

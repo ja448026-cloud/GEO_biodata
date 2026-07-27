@@ -1,0 +1,32 @@
+schema_version: 0.1
+default_profile: core
+cache_policy:
+  repo_commits_raw_data: false
+  repo_commits_package_libraries: false
+  recommended_cache_roots:
+    - R_USER_CACHE_DIR
+    - RENV_PATHS_CACHE
+profiles:
+  core:
+    description: Resource discovery, guarded downloads, manifest validation, and smoke tests.
+    packages:
+      cran: [httr2, jsonlite, digest, yaml]
+      bioc: [GEOquery, Biobase]
+  bulk:
+    description: Bulk raw-count or normalized matrix QC, DE, and diagnostic plots.
+    extends: [core]
+    packages:
+      cran: [ggplot2, pheatmap]
+      bioc: [DESeq2, edgeR, limma]
+  enrichment:
+    description: Preranked GSEA and over-representation analysis after a valid DE table.
+    extends: [bulk]
+    packages:
+      cran: []
+      bioc: [fgsea, clusterProfiler, msigdbr, org.Hs.eg.db, org.Mm.eg.db, ReactomePA]
+  scrna:
+    description: Single-cell object intake, QC, clustering, marker diagnostics, and author-label preservation.
+    extends: [core]
+    packages:
+      cran: [Seurat, Matrix, patchwork, ggplot2]
+      bioc: [SingleCellExperiment, scater, scran]

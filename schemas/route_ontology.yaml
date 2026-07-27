@@ -1,0 +1,28 @@
+routes:
+  bulk_raw_counts:
+    label: Bulk raw counts
+    description: Non-negative integer gene-by-sample count matrix with reviewed sample groups.
+  bulk_normalized:
+    label: Bulk normalized expression
+    description: Log-normalized expression, TPM, FPKM, CPM, or similar matrix not suitable for raw-count models.
+  microarray_series_matrix:
+    label: Microarray or series matrix
+    description: ExpressionSet, GEO Series Matrix, or microarray intensity matrix.
+  scrna_raw_counts:
+    label: scRNA raw counts
+    description: MTX/H5/count-bearing H5AD or Seurat object suitable for single-cell QC.
+  scrna_author_object:
+    label: scRNA author object
+    description: Author-processed Seurat/H5AD/RDS object where existing labels and embeddings are preserved by default.
+  metadata_only:
+    label: Metadata only
+    description: Public resources support inventory and review, but no safe expression analysis.
+  raw_fastq_handoff:
+    label: Raw FASTQ handoff
+    description: Only raw sequencing accessions/files are available; pass to nf-core/fetchngs or assay-specific processing.
+
+deprecated_aliases:
+  scRNA: scrna_raw_counts
+  bulk_microarray: microarray_series_matrix
+  bulk_counts_or_normalized: metadata_only
+  review_metadata: metadata_only

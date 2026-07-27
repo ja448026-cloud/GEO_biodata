@@ -1,0 +1,17 @@
+accession: GSE123456
+route: scrna_author_object
+
+input:
+  file: raw/author_object.placeholder.txt
+  input_type: author_processed_object
+  location_type: local
+  species: human
+
+review:
+  mode: agent_adjudicated
+  decision_record: resources/analysis_decisions.tsv
+  unresolved_conflicts: 0
+  evidence_threshold_passed: true
+
+autonomy:
+  mode: conservative

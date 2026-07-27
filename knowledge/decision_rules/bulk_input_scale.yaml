@@ -1,0 +1,19 @@
+rule_id: bulk_input_scale_v0.1
+applies_to: [bulk_raw_counts, bulk_normalized, microarray_series_matrix]
+principle: Choose the statistical model from verified input scale, not from filenames alone.
+route_rules:
+  bulk_raw_counts:
+    required_content: nonnegative integer-like gene-by-sample matrix
+    safe_methods: [DESeq2, edgeR]
+    unsafe_methods: [limma_lmFit_without_voom]
+  bulk_normalized:
+    required_content: finite normalized/log expression or abundance matrix
+    safe_methods: [limma_lmFit, exploratory_pca, clustering]
+    unsafe_methods: [DESeq2_raw_count_model, edgeR_raw_count_model]
+  microarray_series_matrix:
+    required_content: platform-reviewed expression matrix or ExpressionSet
+    safe_methods: [limma]
+checks:
+  - Verify matrix columns exactly match reviewed sample mapping.
+  - Reject negative or fractional values for raw-count routes.
+  - Do not infer raw-count status only from names such as count, matrix, expression, or data.

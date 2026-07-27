@@ -1,0 +1,35 @@
+rule_id: scrna_post_count_qc_v0.1
+applies_to: [scrna_raw_counts, scrna_author_object]
+principle: scRNA post-count analysis should be distribution-aware, sample-aware, and provenance-preserving.
+ordered_stages:
+  - raw_count_preservation
+  - per_sample_or_capture_qc
+  - ambient_rna_assessment_when_supported
+  - doublet_detection_per_sample_or_capture
+  - normalization_once
+  - hvg_selection_with_correct_input_scale
+  - dimensionality_reduction
+  - clustering_resolution_sweep
+  - marker_ranking_for_annotation
+  - conservative_label_assignment
+required_review_items:
+  - detected_genes_distribution
+  - total_umi_distribution
+  - mitochondrial_fraction_distribution
+  - batch_or_capture_partition
+  - cells_flagged_or_removed_by_each_rule
+  - doublet_score_and_class_fields
+  - threshold_justification_plots
+guardrails:
+  - Do not use a universal fixed mitochondrial cutoff across tissues or assays.
+  - Do not run QC, ambient assessment, or doublet calling after merging batches when per-sample inputs exist.
+  - Do not normalize already-normalized data.
+  - Do not reflexively regress total counts, mitochondrial fraction, or cell cycle.
+  - Use UMAP for visualization, not distance-based inference.
+  - Treat cluster markers as descriptive labels, not proof of a new cell type.
+safe_outputs_before_formal_stats:
+  - cell_qc_metrics.tsv
+  - qc_thresholds.tsv
+  - cluster_resolution_summary.tsv
+  - cluster_markers_descriptive.tsv
+  - annotation_confidence.tsv
