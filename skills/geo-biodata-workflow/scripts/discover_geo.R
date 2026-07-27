@@ -653,7 +653,7 @@ analysis_decisions <- data.frame(
   confidence = if (nrow(route_candidates) > 0L) route_candidates$confidence[[1L]] else 0,
   decision_rule = "superseries_selection_v0.1",
   agent_model = "rules_only",
-  conflict_status = if (any(routing_evidence$conflicts)) "resolved" else "none",
+  conflict_status = if (any(routing_evidence$conflicts)) "unresolved" else "none",
   evidence_sources = paste(unique(routing_evidence$evidence_source), collapse = ";"),
   retrieved_at = now_utc <- format(Sys.time(), tz = "UTC", usetz = TRUE),
   decided_at = now_utc,

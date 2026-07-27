@@ -50,7 +50,10 @@ cat(sprintf("PASS execution_state=%s\n", exec_state))
 # ── Optional: contract_state ─────────────────────────────────────────────────
 
 expected_contract <- get_opt_val("--expect-contract")
-if (!is.na(expected_contract) && "contract_state" %in% names(status)) {
+if (!is.na(expected_contract)) {
+  if (!"contract_state" %in% names(status)) {
+    fail("--expect-contract specified but workflow_status.tsv has no contract_state column.")
+  }
   cs <- status$contract_state[[1L]]
   if (cs != expected_contract) {
     fail(sprintf("Expected contract_state='%s', got '%s'.", expected_contract, cs))
@@ -61,7 +64,10 @@ if (!is.na(expected_contract) && "contract_state" %in% names(status)) {
 # ── Optional: technical QC ──────────────────────────────────────────────────
 
 expected_tqc <- get_opt_val("--expect-technical-qc")
-if (!is.na(expected_tqc) && "technical_qc" %in% names(status)) {
+if (!is.na(expected_tqc)) {
+  if (!"technical_qc" %in% names(status)) {
+    fail("--expect-technical-qc specified but workflow_status.tsv has no technical_qc column.")
+  }
   tqc <- status$technical_qc[[1L]]
   if (tqc != expected_tqc) {
     fail(sprintf("Expected technical_qc='%s', got '%s'.", expected_tqc, tqc))
@@ -72,7 +78,10 @@ if (!is.na(expected_tqc) && "technical_qc" %in% names(status)) {
 # ── Optional: result_signal ─────────────────────────────────────────────────
 
 expected_rs <- get_opt_val("--expect-result-signal")
-if (!is.na(expected_rs) && "result_signal" %in% names(status)) {
+if (!is.na(expected_rs)) {
+  if (!"result_signal" %in% names(status)) {
+    fail("--expect-result-signal specified but workflow_status.tsv has no result_signal column.")
+  }
   rs <- status$result_signal[[1L]]
   if (rs != expected_rs) {
     fail(sprintf("Expected result_signal='%s', got '%s'.", expected_rs, rs))
@@ -83,7 +92,10 @@ if (!is.na(expected_rs) && "result_signal" %in% names(status)) {
 # ── Optional: mapping_status ─────────────────────────────────────────────────
 
 expected_map <- get_opt_val("--expect-mapping")
-if (!is.na(expected_map) && "mapping_status" %in% names(status)) {
+if (!is.na(expected_map)) {
+  if (!"mapping_status" %in% names(status)) {
+    fail("--expect-mapping specified but workflow_status.tsv has no mapping_status column.")
+  }
   ms <- status$mapping_status[[1L]]
   if (ms != expected_map) {
     fail(sprintf("Expected mapping_status='%s', got '%s'.", expected_map, ms))
@@ -94,7 +106,10 @@ if (!is.na(expected_map) && "mapping_status" %in% names(status)) {
 # ── Optional: inventory_state ────────────────────────────────────────────────
 
 expected_inv <- get_opt_val("--expect-inventory")
-if (!is.na(expected_inv) && "inventory_state" %in% names(status)) {
+if (!is.na(expected_inv)) {
+  if (!"inventory_state" %in% names(status)) {
+    fail("--expect-inventory specified but workflow_status.tsv has no inventory_state column.")
+  }
   ist <- status$inventory_state[[1L]]
   if (ist != expected_inv) {
     fail(sprintf("Expected inventory_state='%s', got '%s'.", expected_inv, ist))

@@ -69,6 +69,47 @@ if (is.null(route_rules)) {
   )
 }
 
+input_type <- manifest$input$input_type %||% ""
+
+# ── Conditional requirements (must apply BEFORE design/contrast checks) ────
+if (!is.null(route_rules$conditional_requirements)) {
+  analysis_intent <- manifest$analysis$intent %||% "differential_expression"
+  for (cr in route_rules$conditional_requirements) {
+    cond <- cr$condition
+    if (!is.null(cond$analysis.intent) && !identical(cond$analysis.intent, analysis_intent)) next
+    if (isTRUE(cr$requires_design) && !isTRUE(route_rules$requires_design)) {
+      route_rules$requires_design <- TRUE
+    }
+    if (isTRUE(cr$requires_contrast) && !isTRUE(route_rules$requires_contrast)) {
+      route_rules$requires_contrast <- TRUE
+    }
+    if (!is.null(cr$required_scale_fields) && length(cr$required_scale_fields) > 0L) {
+      scale_config <- manifest$input$scale %||% list()
+      for (sf in cr$required_scale_fields) {
+        if (!has_field(scale_config, sf)) {
+          add_error("route + analysis.intent=", analysis_intent, " requires input.scale.", sf)
+        }
+      }
+      if (!is.null(cr$scale_value_rules)) {
+        for (svr in cr$scale_value_rules) {
+          sv_field <- svr$field
+          applies <- svr$applies_when
+          if (!is.null(applies$input_type)) {
+            if (!input_type %in% unlist(applies$input_type)) next
+          }
+          val <- scale_config[[sv_field]]
+          if (!is.null(svr$must_equal) && !identical(val, svr$must_equal)) {
+            add_error("input.scale.", sv_field, " must be ", svr$must_equal, " for ", input_type, ", got: ", val %||% "NULL")
+          }
+          if (!is.null(svr$must_start_with) && !grepl(paste0("^", svr$must_start_with), val %||% "")) {
+            add_error("input.scale.", sv_field, " must start with '", svr$must_start_with, "' for ", input_type, ", got: ", val %||% "NULL")
+          }
+        }
+      }
+    }
+  }
+}
+
 for (field in schema$required_input_fields) {
   if (!has_field(manifest$input, field)) add_error("Missing input field: input.", field)
 }
@@ -238,58 +279,6 @@ if (identical(location_type, "local") && nzchar(input_path) && file.exists(input
   }
 }
 
-# ── Conditional requirements (route + analysis.intent) ───────────────────────
-
-if (!is.null(route_rules$conditional_requirements)) {
-  analysis_intent <- manifest$analysis$intent %||% "differential_expression"
-  for (cr in route_rules$conditional_requirements) {
-    cond <- cr$condition
-    # Check if this condition's analysis.intent matches
-    if (!is.null(cond$analysis.intent) && !identical(cond$analysis.intent, analysis_intent)) next
-
-    # Apply overrides
-    if (isTRUE(cr$requires_design) && !isTRUE(route_rules$requires_design)) {
-      route_rules$requires_design <- TRUE
-      if (!has_field(manifest$design, "formula")) {
-        add_error("route + analysis.intent=", analysis_intent, " requires design.formula.")
-      }
-      if (!has_field(manifest$design, "contrast")) {
-        add_error("route + analysis.intent=", analysis_intent, " requires design.contrast.")
-      }
-    }
-    if (isTRUE(cr$requires_contrast) && !isTRUE(route_rules$requires_contrast)) {
-      route_rules$requires_contrast <- TRUE
-    }
-
-    # Validate required scale fields
-    if (!is.null(cr$required_scale_fields) && length(cr$required_scale_fields) > 0L) {
-      scale_config <- manifest$input$scale %||% list()
-      for (sf in cr$required_scale_fields) {
-        if (!has_field(scale_config, sf)) {
-          add_error("route + analysis.intent=", analysis_intent, " requires input.scale.", sf)
-        }
-      }
-      # Scale value rules
-      if (!is.null(cr$scale_value_rules)) {
-        for (svr in cr$scale_value_rules) {
-          sv_field <- svr$field
-          applies <- svr$applies_when
-          if (!is.null(applies$input_type)) {
-            if (!input_type %in% unlist(applies$input_type)) next
-          }
-          val <- scale_config[[sv_field]]
-          if (!is.null(svr$must_equal) && !identical(val, svr$must_equal)) {
-            add_error("input.scale.", sv_field, " must be ", svr$must_equal, " for ", input_type, ", got: ", val %||% "NULL")
-          }
-          if (!is.null(svr$must_start_with) && !grepl(paste0("^", svr$must_start_with), val %||% "")) {
-            add_error("input.scale.", sv_field, " must start with '", svr$must_start_with, "' for ", input_type, ", got: ", val %||% "NULL")
-          }
-        }
-      }
-    }
-  }
-}
-
 # ── Scale contract validation ────────────────────────────────────────────────
 if (route %in% c("bulk_normalized", "microarray_series_matrix")) {
   scale_config <- manifest$input$scale %||% list()
@@ -347,7 +336,7 @@ if (identical(manifest$review$mode %||% "", "agent_adjudicated")) {
         }
       }
 
-      # Multi-row: select the correct row by decision_type or decision_id
+      # Multi-row: select the correct row by decision_id or decision_type
       if (nrow(decision) > 1L) {
         target_id <- manifest$review$decision_id %||% ""
         if (nzchar(target_id) && "decision_id" %in% names(decision)) {
@@ -357,8 +346,16 @@ if (identical(manifest$review$mode %||% "", "agent_adjudicated")) {
           }
         } else if ("decision_type" %in% names(decision)) {
           sel <- decision[grepl("route", tolower(decision$decision_type)), , drop = FALSE]
-          if (nrow(sel) == 0L) sel <- decision  # fallback: use first row
-          decision <- sel[1L, , drop = FALSE]
+          if (nrow(sel) == 0L) {
+            add_error("analysis_decisions has no row with decision_type containing 'route'.")
+          } else if (nrow(sel) > 1L) {
+            add_error("analysis_decisions has multiple rows with decision_type='route_selection' (",
+              nrow(sel), "). Specify review.decision_id in manifest.")
+          } else {
+            decision <- sel[1L, , drop = FALSE]
+          }
+        } else {
+          add_error("analysis_decisions has multiple rows but no decision_type column for disambiguation.")
         }
       }
       if (nrow(decision) == 0L) {
