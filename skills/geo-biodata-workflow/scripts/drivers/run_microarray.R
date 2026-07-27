@@ -146,14 +146,24 @@ if (nzchar(detected_platforms)) {
   platform_info <- resolve_platform(detected_platforms, platform_registry)
 }
 
-# Write platform resolution
-if (!is.null(platform_info)) {
-  utils::write.table(
-    as.data.frame(platform_info, stringsAsFactors = FALSE),
-    file.path(tables_dir, "platform_resolution.tsv"),
-    sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+# Write platform resolution (always, even without annotation)
+platform_resolution <- if (!is.null(platform_info)) {
+  as.data.frame(platform_info, stringsAsFactors = FALSE)
+} else {
+  data.frame(
+    gpl_id = detected_platforms %||% "unknown",
+    platform_name = "unresolved",
+    annotation_package = "not_available",
+    mapping_status = "unavailable",
+    mapping_method = "none",
+    reason = if (nzchar(detected_platforms)) "platform_not_in_registry" else "no_platform_detected",
+    gene_level_supported = FALSE,
+    stringsAsFactors = FALSE
   )
 }
+utils::write.table(platform_resolution,
+  file.path(tables_dir, "platform_resolution.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
 # ── Input parsing ────────────────────────────────────────────────────────────
 
