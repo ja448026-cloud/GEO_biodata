@@ -74,7 +74,7 @@ jobs:
       - name: Assert bulk normalized result
         run: Rscript validation/assert_workflow_result.R /tmp/bulk_norm_test EXECUTION_COMPLETE --expect-contract VALID --expect-outputs "de_results_,design_matrix_used.tsv,contrast_matrix_used.tsv,factor_levels_before_relevel.tsv"
 
-      - name: Negative test: raw integer mislabeled as normalized
+      - name: "Negative test: raw integer mislabeled as normalized"
         run: |
           mkdir -p /tmp/neg_raw/raw /tmp/neg_raw/resources
           cp validation/fixtures/negative/raw_mislabeled_normalized/run_manifest.yaml /tmp/neg_raw/
@@ -83,7 +83,7 @@ jobs:
           Rscript skills/geo-biodata-workflow/scripts/drivers/run_bulk_normalized.R /tmp/neg_raw/run_manifest.yaml 2>&1 | grep -q "INPUT_SCALE_CONFLICT" && echo "PASS: raw-like mislabeled correctly blocked" && exit 0
           echo "FAIL: raw-like mislabeled was not blocked" && exit 1
 
-      - name: Negative test: missing scale contract
+      - name: "Negative test: missing scale contract"
         run: |
           mkdir -p /tmp/neg_scale/raw /tmp/neg_scale/resources
           cp validation/fixtures/negative/missing_scale_contract/run_manifest.yaml /tmp/neg_scale/
@@ -134,21 +134,7 @@ jobs:
           '
 
           mkdir -p /tmp/scrnainv_test
-          cat > /tmp/scrnainv_test/run_manifest.yaml << 'MANIFEST'
-          accession: GSE999999
-          route: scrna_author_object
-          input:
-            file: /tmp/tiny_seurat.rds
-            input_type: author_seurat
-            location_type: local
-            species: human
-          review:
-            mode: manual
-            input_type_confirmed: true
-            sample_mapping_confirmed: true
-            design_confirmed: true
-            contrast_confirmed: true
-          MANIFEST
+          printf 'accession: GSE999999\nroute: scrna_author_object\ninput:\n  file: /tmp/tiny_seurat.rds\n  input_type: author_seurat\n  location_type: local\n  species: human\nreview:\n  mode: manual\n  input_type_confirmed: true\n  sample_mapping_confirmed: true\n  design_confirmed: true\n  contrast_confirmed: true\n' > /tmp/scrnainv_test/run_manifest.yaml
 
           Rscript skills/geo-biodata-workflow/scripts/drivers/inspect_scrna_object.R /tmp/scrnainv_test/run_manifest.yaml
 
