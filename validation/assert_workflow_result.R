@@ -31,13 +31,15 @@ status_path <- file.path(run_dir, "workflow_status.tsv")
 if (!file.exists(status_path)) fail("workflow_status.tsv does not exist.")
 status <- utils::read.delim(status_path, stringsAsFactors = FALSE)
 
-# Execution state
+# Execution state (supports execution_state, state, or inventory_state)
 exec_state <- if ("execution_state" %in% names(status)) {
   status$execution_state[[1L]]
 } else if ("state" %in% names(status)) {
   status$state[[1L]]
+} else if ("inventory_state" %in% names(status)) {
+  status$inventory_state[[1L]]
 } else {
-  fail("workflow_status.tsv has no execution_state or state column.")
+  fail("workflow_status.tsv has no execution_state, state, or inventory_state column.")
 }
 
 if (exec_state != expected_execution) {
