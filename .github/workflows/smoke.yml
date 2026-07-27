@@ -26,9 +26,7 @@ jobs:
         run: Rscript skills/geo-biodata-workflow/scripts/bootstrap_environment.R --profile core --install
 
       - name: Core manifest and guard tests
-        run: Rscript -e '
-          source("validation/run_smoke_checks.R", local = TRUE)
-        '
+        run: Rscript validation/run_smoke_checks.R
 
   bulk:
     runs-on: ubuntu-latest
