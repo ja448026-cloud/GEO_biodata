@@ -1,0 +1,5 @@
+interface:
+  display_name: "GEO_biodata Figure"
+  short_description: "Make one source-linked diagnostic plot"
+  default_prompt: "Use $geo-biodata-figure to create one simple diagnostic plot from GEO_biodata source tables, with source linkage and readable export."
+

@@ -4,8 +4,9 @@ args <- commandArgs(trailingOnly = TRUE)
 usage <- paste(
   "Usage:",
   "  bootstrap_environment.R --profile core --check",
-  "  bootstrap_environment.R --profile bulk --plan",
-  "  bootstrap_environment.R --profile scrna --install",
+  "  bootstrap_environment.R --profile bulk_limma --plan",
+  "  bootstrap_environment.R --profile bulk_counts --check",
+  "  bootstrap_environment.R --profile scrna_intake --install",
   sep = "\n"
 )
 if (length(args) < 2L) stop(usage, call. = FALSE)

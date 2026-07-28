@@ -1,0 +1,5 @@
+interface:
+  display_name: "GEO_biodata Maintainer"
+  short_description: "Maintain repo structure, tests, and release hygiene"
+  default_prompt: "Use $geo-biodata-maintainer to update GEO_biodata repository structure, docs, validation, CI, and release hygiene with quick checks by default."
+

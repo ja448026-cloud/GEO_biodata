@@ -12,34 +12,62 @@ profiles:
     packages:
       cran: [httr2, jsonlite, digest, yaml]
       bioc: [GEOquery, Biobase]
-  bulk:
+  bulk_limma:
     description: >
-      Bulk raw-count (DESeq2), normalized-matrix (limma), and microarray (limma) QC,
-      DE, and diagnostic plots. Includes driver-specific dependencies:
-      - run_bulk_counts.R: DESeq2, SummarizedExperiment, ggplot2
+      Normalized-matrix and microarray limma QC, DE, and diagnostic plots.
       - run_bulk_normalized.R: limma, ggplot2
       - run_microarray.R: limma, ggplot2, Biobase
       - bulk_limma_common.R: limma, ggplot2
     extends: [core]
     packages:
       cran: [ggplot2, pheatmap]
-      bioc: [DESeq2, edgeR, limma, SummarizedExperiment]
+      bioc: [limma]
+  bulk_counts:
+    description: >
+      Bulk raw-count QC and DE with count-aware Bioconductor methods.
+      - run_bulk_counts.R: DESeq2, edgeR, SummarizedExperiment, ggplot2
+    extends: [core]
+    packages:
+      cran: [ggplot2]
+      bioc: [DESeq2, edgeR, SummarizedExperiment]
+  bulk:
+    description: Compatibility profile for all bulk and microarray drivers.
+    extends: [bulk_limma, bulk_counts]
+    packages:
+      cran: []
+      bioc: []
   enrichment:
     description: Preranked GSEA and over-representation analysis after a valid DE table.
-    extends: [bulk]
+    extends: [bulk_limma]
     packages:
       cran: []
       bioc: [fgsea, clusterProfiler, msigdbr, org.Hs.eg.db, org.Mm.eg.db, ReactomePA]
-  scrna:
+  scrna_intake:
     description: >
-      Single-cell object intake, QC, clustering, marker diagnostics, and author-label preservation.
-      Driver-specific dependencies:
-      - inspect_scrna_object.R: Seurat (for RDS), anndataR or zellkonverter (for H5AD),
-        SingleCellExperiment, Matrix
-      H5AD support requires at least one of: anndataR (pure R, recommended) or zellkonverter
-      (requires Python anndata). Without them, H5AD inventory falls back to error with
-      installation instructions.
+      Single-cell object intake and read-only inventory for SeuratObject, sparse matrices,
+      SingleCellExperiment, and H5AD readers when available.
+      H5AD support requires at least one of: anndataR (pure R, recommended) or zellkonverter.
     extends: [core]
     packages:
-      cran: [Seurat, Matrix, patchwork, ggplot2]
-      bioc: [SingleCellExperiment, scater, scran, anndataR, zellkonverter]
+      cran: [SeuratObject, Matrix]
+      bioc: [SingleCellExperiment, anndataR]
+  scrna:
+    description: >
+      Single-cell QC, clustering, marker diagnostics, and author-label preservation.
+      Use only when reclustering or marker review is requested.
+    extends: [scrna_intake]
+    packages:
+      cran: [Seurat, patchwork, ggplot2]
+      bioc: []
+  scrna_pseudobulk:
+    description: scRNA sample-level pseudobulk DE after raw counts are aggregated by sample and cell type.
+    extends: [scrna_intake, bulk_counts]
+    packages:
+      cran: []
+      bioc: []
+  scrna_full:
+    description: Full scRNA profile with additional QC/clustering helpers.
+    extends: [scrna]
+    packages:
+      cran: []
+      bioc: [scater, scran, zellkonverter]

@@ -2,6 +2,9 @@
 
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
 
+args <- commandArgs(trailingOnly = TRUE)
+quick_mode <- "--quick" %in% args
+
 cmd_args <- commandArgs(trailingOnly = FALSE)
 file_arg <- grep("^--file=", cmd_args, value = TRUE)
 this_file <- if (length(file_arg) > 0L) {
@@ -31,6 +34,33 @@ r_files <- list.files(script_dir, pattern = "\\.R$", full.names = TRUE, recursiv
 for (path in sort(r_files)) {
   parse(file = path)
   cat("PARSE_OK\t", basename(path), "\n", sep = "")
+}
+
+cat("== Skill frontmatter checks ==\n")
+skill_files <- list.files(file.path(repo_root, "skills"), pattern = "^SKILL\\.md$",
+  full.names = TRUE, recursive = TRUE)
+for (path in sort(skill_files)) {
+  lines <- readLines(path, warn = FALSE)
+  if (length(lines) < 4L || !identical(lines[[1L]], "---")) {
+    fail(sprintf("Skill missing YAML frontmatter: %s", path))
+  }
+  closing <- which(lines[-1L] == "---")
+  if (length(closing) == 0L) {
+    fail(sprintf("Skill frontmatter is not closed: %s", path))
+  }
+  header <- lines[2L:closing[[1L]]]
+  parsed_header <- tryCatch(yaml::yaml.load(paste(header, collapse = "\n")),
+    error = function(e) e)
+  if (inherits(parsed_header, "error")) {
+    fail(sprintf("Skill frontmatter is invalid YAML: %s", path))
+  }
+  if (!any(grepl("^name:\\s*[a-z0-9-]+\\s*$", header))) {
+    fail(sprintf("Skill frontmatter missing valid name: %s", path))
+  }
+  if (is.null(parsed_header$description) || !nzchar(parsed_header$description)) {
+    fail(sprintf("Skill frontmatter missing description: %s", path))
+  }
+  cat("SKILL_OK\t", basename(dirname(path)), "\n", sep = "")
 }
 
 cat("== Download guard checks ==\n")
@@ -207,7 +237,9 @@ expect_status(
 )
 
 cat("== Bulk driver optional check ==\n")
-if (all(vapply(c("DESeq2", "ggplot2", "SummarizedExperiment"), requireNamespace, logical(1), quietly = TRUE))) {
+if (quick_mode) {
+  cat("SKIP\tBulk driver optional check skipped in quick mode.\n")
+} else if (all(vapply(c("DESeq2", "ggplot2", "SummarizedExperiment"), requireNamespace, logical(1), quietly = TRUE))) {
   bulk_dir <- file.path(scratch, "bulk_driver")
   dir.create(file.path(bulk_dir, "raw"), recursive = TRUE, showWarnings = FALSE)
   dir.create(file.path(bulk_dir, "resources"), recursive = TRUE, showWarnings = FALSE)
@@ -236,7 +268,9 @@ if (all(vapply(c("DESeq2", "ggplot2", "SummarizedExperiment"), requireNamespace,
 }
 
 cat("== Normalized bulk driver optional check ==\n")
-if (all(vapply(c("limma", "ggplot2", "yaml"), requireNamespace, logical(1), quietly = TRUE))) {
+if (quick_mode) {
+  cat("SKIP\tBulk normalized driver optional check skipped in quick mode.\n")
+} else if (all(vapply(c("limma", "ggplot2", "yaml"), requireNamespace, logical(1), quietly = TRUE))) {
   norm_dir <- file.path(scratch, "bulk_normalized_driver")
   norm_fixture <- file.path(repo_root, "validation", "fixtures", "manifest_bulk_normalized")
   dir.create(file.path(norm_dir, "raw"), recursive = TRUE, showWarnings = FALSE)
@@ -271,7 +305,9 @@ if (all(vapply(c("limma", "ggplot2", "yaml"), requireNamespace, logical(1), quie
 }
 
 cat("== Microarray driver optional check ==\n")
-if (all(vapply(c("limma", "ggplot2", "yaml", "Biobase"), requireNamespace, logical(1), quietly = TRUE))) {
+if (quick_mode) {
+  cat("SKIP\tMicroarray driver optional check skipped in quick mode.\n")
+} else if (all(vapply(c("limma", "ggplot2", "yaml", "Biobase"), requireNamespace, logical(1), quietly = TRUE))) {
   ma_dir <- file.path(scratch, "microarray_driver")
   ma_fixture <- file.path(repo_root, "validation", "fixtures", "manifest_microarray")
   dir.create(file.path(ma_dir, "raw"), recursive = TRUE, showWarnings = FALSE)
@@ -308,12 +344,16 @@ invisible(file.copy(file.path(neg_fixture_base, "raw_mislabeled_normalized", "ra
   file.path(raw_mislabel_dir, "raw", "counts.tsv"), overwrite = TRUE))
 invisible(file.copy(file.path(neg_fixture_base, "raw_mislabeled_normalized", "resources", "sample_mapping_reviewed.tsv"),
   file.path(raw_mislabel_dir, "resources", "sample_mapping_reviewed.tsv"), overwrite = TRUE))
-expect_status(
-  "Raw-count mislabeled as log_normalized failure",
-  "Rscript",
-  c(file.path(script_dir, "drivers", "run_bulk_normalized.R"), file.path(raw_mislabel_dir, "run_manifest.yaml")),
-  1L
-)
+if (quick_mode) {
+  cat("SKIP\tRaw-count mislabeled driver check skipped in quick mode.\n")
+} else {
+  expect_status(
+    "Raw-count mislabeled as log_normalized failure",
+    "Rscript",
+    c(file.path(script_dir, "drivers", "run_bulk_normalized.R"), file.path(raw_mislabel_dir, "run_manifest.yaml")),
+    1L
+  )
+}
 
 # missing scale + normalized_expression + DE: expected MANIFEST_INVALID
 missing_scale_dir <- file.path(scratch, "neg_missing_scale")
