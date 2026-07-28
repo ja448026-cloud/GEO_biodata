@@ -20,7 +20,7 @@ Use the smallest skill that matches the current task:
 | Independent source-table-linked figure planning, generation guidance, and QA | `geo-biodata-figure` |
 | Legacy prompts naming the old entry point | `geo-biodata-workflow` |
 
-Stable executor paths live under `core/R/`. The legacy workflow skill remains for old prompts, but new user-facing commands should use `core/R/`.
+Stable executor paths live under `core/R/`. The original script bundle remains under `skills/geo-biodata-workflow/scripts/` as a compatibility implementation while the public entry points move to the slimmer module layout.
 
 ## Fast Download-Only Start
 
@@ -71,6 +71,24 @@ For slow GEO transfers:
 ```powershell
 $env:GEO_BIODATA_DOWNLOAD_TIMEOUT_SEC = "600"
 $env:GEO_BIODATA_DOWNLOAD_RETRIES = "5"
+```
+
+### Download fallback strategy
+
+When `utils::download.file` exhausts all retries, the downloader falls back to a backup method:
+
+1. **Primary**: R's built-in `utils::download.file` (libcurl backend) with configurable retries and exponential backoff
+2. **Backup (curl)**: If `curl` is on PATH and `GEO_BIODATA_DOWNLOAD_BACKUP=curl` (default), the downloader retries via the `curl` CLI with its own retry and timeout
+3. **Last resort (GEOquery)**: For NCBI FTP/GEO URLs specifically, `GEOquery::getGEOSuppFiles` is tried as a final alternative
+
+Configure backup behavior:
+
+```powershell
+# Disable backup (primary-only)
+$env:GEO_BIODATA_DOWNLOAD_BACKUP = "none"
+
+# Increase backup timeout (default 1200s = 20 min)
+$env:GEO_BIODATA_BACKUP_TIMEOUT_SEC = "3600"
 ```
 
 Linux/macOS shells use the same `Rscript` commands with `/` paths, for example:

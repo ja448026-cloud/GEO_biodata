@@ -433,6 +433,48 @@ write_limma_outputs <- function(result, ebayes_fit, design, contrast_matrix,
   limma::plotSA(ebayes_fit, main = "Mean-variance trend")
   grDevices::dev.off()
 
+  # MA plot
+  ma_df <- data.frame(
+    AveExpr = de_out$AveExpr,
+    logFC = de_out$logFC,
+    is_de = ifelse(!is.na(de_out$adj.P.Val) & de_out$adj.P.Val < 0.05, "adj.P<0.05", "ns"),
+    stringsAsFactors = FALSE
+  )
+  ma_plot <- ggplot2::ggplot(ma_df, ggplot2::aes(x = AveExpr, y = logFC, color = is_de)) +
+    ggplot2::geom_point(alpha = 0.4, size = 0.6) +
+    ggplot2::scale_color_manual(values = c("adj.P<0.05" = "firebrick", "ns" = "grey60")) +
+    ggplot2::theme_bw() +
+    ggplot2::labs(x = "Average expression", y = "log2 fold change",
+                  color = NULL, title = paste("MA plot:", contrast_name))
+  ggplot2::ggsave(file.path(figures_dir, paste0("bulk_ma_", contrast_name, ".pdf")),
+    ma_plot, width = 6, height = 5)
+
+  # Volcano plot
+  volcano_df <- data.frame(
+    logFC = de_out$logFC,
+    neg_log10_pval = -log10(de_out$P.Value),
+    is_de = ifelse(!is.na(de_out$adj.P.Val) & de_out$adj.P.Val < 0.05, "adj.P<0.05", "ns"),
+    stringsAsFactors = FALSE
+  )
+  volcano_df <- volcano_df[is.finite(volcano_df$neg_log10_pval), , drop = FALSE]
+  top_n <- 10L
+  volcano_df$label <- ""
+  if (nrow(volcano_df) > 0L) {
+    ranked_idx <- order(volcano_df$neg_log10_pval * abs(volcano_df$logFC), decreasing = TRUE)
+    top_idx <- head(ranked_idx, top_n)
+    volcano_df$label[top_idx] <- de_out$feature_id[top_idx]
+  }
+  volcano_plot <- ggplot2::ggplot(volcano_df, ggplot2::aes(x = logFC, y = neg_log10_pval, color = is_de, label = label)) +
+    ggplot2::geom_point(alpha = 0.4, size = 0.6) +
+    ggplot2::scale_color_manual(values = c("adj.P<0.05" = "firebrick", "ns" = "grey60")) +
+    ggplot2::geom_text(ggplot2::aes(label = label), vjust = -0.5, size = 2.5, color = "black",
+                       show.legend = FALSE, na.rm = TRUE) +
+    ggplot2::theme_bw() +
+    ggplot2::labs(x = "log2 fold change", y = "-log10(p-value)",
+                  color = NULL, title = paste("Volcano:", contrast_name))
+  ggplot2::ggsave(file.path(figures_dir, paste0("bulk_volcano_", contrast_name, ".pdf")),
+    volcano_plot, width = 6, height = 5.5)
+
   # model_specification.txt
   model_spec <- c(
     paste("Contrast factor:", contrast_factor),
@@ -603,4 +645,133 @@ determine_limma_status <- function(output_paths, qc_result, fallback_events) {
     result_signal = result_signal,
     note = note
   )
+}
+
+# ── Paired / blocking structure detection and plots ─────────────────────────
+
+detect_blocking_factors <- function(design_formula, design_matrix, sample_map, contrast_factor) {
+  design_terms <- labels(stats::terms(design_formula))
+  blocking <- setdiff(design_terms, contrast_factor)
+  if (length(blocking) == 0L) return(list(has_blocking = FALSE, factors = character(), id_col = NULL))
+
+  blocking_cols <- character()
+  id_col <- NULL
+  for (term in blocking) {
+    matched <- names(sample_map)[vapply(names(sample_map), function(nm) {
+      grepl(nm, term, fixed = TRUE)
+    }, logical(1))]
+    blocking_cols <- c(blocking_cols, matched)
+  }
+  blocking_cols <- unique(blocking_cols)
+
+  # Heuristic: the blocking column with the most unique values is the pair/subject ID
+  if (length(blocking_cols) > 0L) {
+    n_unique <- vapply(blocking_cols, function(col) {
+      length(unique(sample_map[[col]]))
+    }, integer(1))
+    id_col <- blocking_cols[which.max(n_unique)]
+  }
+
+  list(
+    has_blocking = length(blocking) > 0L,
+    factors = blocking,
+    blocking_cols = blocking_cols,
+    id_col = id_col
+  )
+}
+
+write_paired_gene_plots <- function(mat, sample_map, de_result, contrast_factor,
+                                     numerator, denominator, blocking_info,
+                                     figures_dir, tables_dir,
+                                     sample_id_col = NULL, top_n_genes = 6L) {
+  if (!blocking_info$has_blocking || is.null(blocking_info$id_col)) return(character())
+
+  pair_id_col <- blocking_info$id_col
+  if (!pair_id_col %in% names(sample_map)) return(character())
+
+  group_col <- contrast_factor
+  contrast_name <- paste(numerator, "vs", denominator, sep = "_")
+
+  # Select samples that have both group levels (complete pairs)
+  sample_groups <- as.character(sample_map[[group_col]])
+  sample_pairs <- as.character(sample_map[[pair_id_col]])
+  pair_groups <- tapply(sample_groups, sample_pairs, function(x) sort(unique(x)), simplify = FALSE)
+  complete_pairs <- names(pair_groups)[vapply(pair_groups, function(x) {
+    all(c(numerator, denominator) %in% x)
+  }, logical(1))]
+
+  if (length(complete_pairs) < 3L) return(character())
+
+  # Rank DE genes by absolute t-statistic or logFC
+  if ("t" %in% names(de_result)) {
+    rank_stat <- abs(de_result$t)
+  } else {
+    rank_stat <- abs(de_result$logFC)
+  }
+  rank_stat[is.na(rank_stat)] <- 0
+  top_idx <- head(order(rank_stat, decreasing = TRUE), top_n_genes)
+  gene_ids <- if ("feature_id" %in% names(de_result)) {
+    as.character(de_result$feature_id)
+  } else {
+    rownames(de_result)
+  }
+  top_genes <- gene_ids[top_idx]
+  top_genes <- top_genes[nzchar(top_genes) & top_genes %in% rownames(mat)]
+  if (length(top_genes) == 0L) return(character())
+
+  generated_plots <- character()
+  pair_samples <- sample_map[sample_map[[pair_id_col]] %in% complete_pairs, ]
+  pair_samples <- pair_samples[pair_samples[[group_col]] %in% c(numerator, denominator), ]
+  sample_ids <- if (!is.null(sample_id_col) && sample_id_col %in% names(pair_samples)) {
+    as.character(pair_samples[[sample_id_col]])
+  } else {
+    rownames(pair_samples)
+  }
+  sample_keep <- nzchar(sample_ids) & sample_ids %in% colnames(mat)
+  pair_samples <- pair_samples[sample_keep, , drop = FALSE]
+  sample_ids <- sample_ids[sample_keep]
+  if (length(sample_ids) < 6L) return(character())
+
+  for (gene in top_genes) {
+    gene_expr <- mat[gene, sample_ids, drop = FALSE]
+    if (ncol(gene_expr) == 0L) next
+
+    expr_df <- data.frame(
+      sample_id = colnames(gene_expr),
+      expression = as.numeric(gene_expr[1L, ]),
+      pair_id = as.character(pair_samples[[pair_id_col]]),
+      group = factor(as.character(pair_samples[[group_col]]), levels = c(denominator, numerator)),
+      stringsAsFactors = FALSE
+    )
+    expr_df <- expr_df[expr_df$pair_id %in% complete_pairs, , drop = FALSE]
+
+    if (nrow(expr_df) < 6L) next
+
+    safe_gene <- gsub("[^A-Za-z0-9_]", "_", gene)
+    plot <- ggplot2::ggplot(expr_df, ggplot2::aes(x = group, y = expression, group = pair_id)) +
+      ggplot2::geom_line(color = "grey50", alpha = 0.5, linewidth = 0.4) +
+      ggplot2::geom_point(ggplot2::aes(color = group), size = 2.5) +
+      ggplot2::theme_bw() +
+      ggplot2::labs(
+        title = paste("Paired:", gene),
+        subtitle = paste(contrast_name, "-", length(complete_pairs), "pairs"),
+        x = NULL, y = "Expression", color = NULL
+      )
+    plot_path <- file.path(figures_dir, paste0("bulk_paired_", safe_gene, "_", contrast_name, ".pdf"))
+    ggplot2::ggsave(plot_path, plot, width = 4, height = 4.5)
+    generated_plots <- c(generated_plots, plot_path)
+  }
+
+  # Save paired source table
+  pair_source <- data.frame(
+    sample_id = sample_ids,
+    pair_id = as.character(pair_samples[[pair_id_col]]),
+    group = as.character(pair_samples[[group_col]]),
+    stringsAsFactors = FALSE
+  )
+  utils::write.table(pair_source,
+    file.path(tables_dir, "paired_sample_structure.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+
+  generated_plots
 }

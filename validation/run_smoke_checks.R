@@ -313,6 +313,125 @@ expect_status(
   0L
 )
 
+cat("== Mapping and enrichment contract checks ==\n")
+mapping_env <- new.env(parent = baseenv())
+source(file.path(core_dir, "mapping", "gene_id_mapping.R"), local = mapping_env)
+mock_gpl <- file.path(scratch, "GPL000000.annot")
+writeLines(c(
+  "!Annotation_platform = GPL000000",
+  "!platform_table_begin",
+  "ID\tGene symbol\tGene ID",
+  "probe1\tGENE001 /// GENE002\t1",
+  "probe2\t\t2",
+  "probe3\tGENE003\t3",
+  "!platform_table_end",
+  "trailing text must not become a data row"
+), mock_gpl, useBytes = TRUE)
+gpl <- mapping_env$read_gpl_annotation(mock_gpl)
+if (any(gpl$annotation$ID == "!platform_table_end")) {
+  fail("GPL reader included !platform_table_end as an annotation row.")
+}
+pmap <- mapping_env$build_probe_symbol_map(gpl)
+if (!identical(attr(pmap, "stats")$platform_id, "GPL000000")) {
+  fail("Probe-symbol mapping stats did not retain platform_id.")
+}
+de_for_mapping <- data.frame(
+  feature_id = c("probe1", "probe3", "probeX"),
+  logFC = c(2, -1, 0.5),
+  P.Value = c(0.01, 0.02, 0.5),
+  stringsAsFactors = FALSE
+)
+rownames(de_for_mapping) <- de_for_mapping$feature_id
+mapping_audit_path <- file.path(scratch, "mapping_audit.tsv")
+mapping_audit <- mapping_env$write_mapping_audit(attr(pmap, "stats"), pmap, de_for_mapping, mapping_audit_path)
+if (!file.exists(mapping_audit_path) || !any(mapping_audit$field == "platform_id")) {
+  fail("Mapping audit did not write the required platform_id field.")
+}
+
+if (!requireNamespace("fgsea", quietly = TRUE)) {
+  fail("fgsea is required for ORA smoke checks.")
+}
+ora_gmt_dir <- file.path(scratch, "gmt")
+dir.create(ora_gmt_dir, recursive = TRUE, showWarnings = FALSE)
+writeLines(c(
+  paste(c("PATHWAY_A", "desc", sprintf("GENE%03d", 1:15)), collapse = "\t"),
+  paste(c("PATHWAY_B", "desc", sprintf("GENE%03d", 10:30)), collapse = "\t")
+), file.path(ora_gmt_dir, "h.all.v1.Hs.symbols.gmt"), useBytes = TRUE)
+ora_query <- file.path(scratch, "ora_query.tsv")
+utils::write.table(
+  data.frame(gene_symbol = sprintf("GENE%03d", 1:6), stringsAsFactors = FALSE),
+  ora_query, sep = "\t", quote = FALSE, row.names = FALSE
+)
+ora_universe <- file.path(scratch, "ora_universe.txt")
+writeLines(sprintf("GENE%03d", 1:120), ora_universe, useBytes = TRUE)
+ora_out <- file.path(scratch, "ora_positive")
+expect_status(
+  "ORA positive universe contract",
+  "Rscript",
+  c(file.path(core_dir, "enrichment", "run_ora_enrichment.R"),
+    "--gene-list", ora_query,
+    "--gene-column", "gene_symbol",
+    "--universe", ora_universe,
+    "--gmt-dir", ora_gmt_dir,
+    "--out-dir", ora_out,
+    "--collections", "h.all"),
+  0L
+)
+ora_status <- utils::read.delim(file.path(ora_out, "ora_status.tsv"), stringsAsFactors = FALSE)
+if (!identical(ora_status$universe_contract_status[[1L]], "PASS")) {
+  fail("ORA positive smoke did not record universe_contract_status=PASS.")
+}
+ora_small_universe <- file.path(scratch, "ora_small_universe.txt")
+writeLines(sprintf("GENE%03d", 1:99), ora_small_universe, useBytes = TRUE)
+expect_status(
+  "ORA small universe refusal",
+  "Rscript",
+  c(file.path(core_dir, "enrichment", "run_ora_enrichment.R"),
+    "--gene-list", ora_query,
+    "--gene-column", "gene_symbol",
+    "--universe", ora_small_universe,
+    "--gmt-dir", ora_gmt_dir,
+    "--out-dir", file.path(scratch, "ora_negative"),
+    "--collections", "h.all"),
+  1L
+)
+
+cat("== Paired plot helper check ==\n")
+if (!requireNamespace("ggplot2", quietly = TRUE)) {
+  fail("ggplot2 is required for paired plot smoke checks.")
+}
+limma_env <- new.env(parent = globalenv())
+source(file.path(core_dir, "bulk_limma_common.R"), local = limma_env)
+paired_figures <- file.path(scratch, "paired_figures")
+paired_tables <- file.path(scratch, "paired_tables")
+dir.create(paired_figures, recursive = TRUE, showWarnings = FALSE)
+dir.create(paired_tables, recursive = TRUE, showWarnings = FALSE)
+paired_mat <- matrix(seq_len(18), nrow = 3L, dimnames = list(
+  c("GENE001", "GENE002", "GENE003"),
+  paste0("S", 1:6)
+))
+paired_map <- data.frame(
+  subject = rep(paste0("P", 1:3), each = 2L),
+  sample_id = paste0("S", 1:6),
+  condition = rep(c("normal", "tumor"), 3L),
+  stringsAsFactors = FALSE
+)
+rownames(paired_map) <- paired_map$sample_id
+paired_de <- data.frame(
+  feature_id = c("GENE001", "GENE002", "GENE003"),
+  logFC = c(2, 1, -1),
+  t = c(4, 3, -2),
+  stringsAsFactors = FALSE
+)
+blocking_info <- list(has_blocking = TRUE, id_col = "subject", factors = "subject")
+paired_plots <- limma_env$write_paired_gene_plots(
+  paired_mat, paired_map, paired_de, "condition", "tumor", "normal",
+  blocking_info, paired_figures, paired_tables, sample_id_col = "sample_id"
+)
+if (length(paired_plots) < 1L || any(!file.exists(paired_plots))) {
+  fail("Paired plot helper did not generate expected plot files.")
+}
+
 cat("== Bulk driver optional check ==\n")
 if (quick_mode) {
   cat("SKIP\tBulk driver optional check skipped in quick mode.\n")

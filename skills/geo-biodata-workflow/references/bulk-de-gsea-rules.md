@@ -30,7 +30,7 @@ Use this reference for ordinary bulk RNA-seq, expression matrix, and microarray 
 8. Interpret NES direction relative to the contrast: positive means enriched at the numerator/up end of the ranking.
 9. Inspect leading-edge genes before treating a pathway as meaningful.
 10. For ORA, define the universe as tested genes after filtering, not all genes in the genome.
-11. For GO over-representation, reduce redundant terms with a documented semantic-similarity or parent-child rule when many related terms dominate.
+11. For GO over-representation, reduce redundant terms with a documented semantic-similarity or parent-child rule when many related terms dominate. The ORA driver (`core/R/enrichment/run_ora_enrichment.R`) provides a simple overlap-gene Jaccard clustering table for review.
 12. For KEGG or online annotation sources, cache the exact gene-set table or package version used for the run.
 
 ## Minimal outputs

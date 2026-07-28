@@ -28,9 +28,28 @@ routes:
     maturity: alpha
     executor: core/R/enrichment/run_preranked_gsea.R
     backend: fgsea
+    validated_scenarios:
+      - synthetic GMT/rank-table smoke fixture
     known_limitations:
       - requires local GMT and explicit rank column
-      - GO/KEGG/Reactome/ORA are handoff-only until mapping/universe drivers are implemented
+  enrichment_ora:
+    maturity: alpha
+    executor: core/R/enrichment/run_ora_enrichment.R
+    backend: Fisher's exact test (stats::fisher.test)
+    validated_scenarios:
+      - synthetic GMT/query/universe smoke fixture
+    known_limitations:
+      - requires explicit universe definition (platform, expressed, reference, or custom)
+      - gene-ID mapping contract must be satisfied before ORA
+  gene_id_mapping:
+    maturity: alpha
+    executor: core/R/mapping/gene_id_mapping.R
+    backend: base R
+    validated_scenarios:
+      - minimal GPL annotation smoke fixture
+    known_limitations:
+      - org.*.eg.db integration in progress
+      - multi-species support requires per-species annotation
   scrna_author_object:
     maturity: experimental
     executor: core/R/scrna/inspect_object.R

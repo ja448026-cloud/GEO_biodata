@@ -100,6 +100,67 @@ manifest <- data.frame(
 utils::write.table(manifest, file.path(tables_dir, paste0("gsea_manifest_", collection, ".tsv")),
   sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
+# ── Pathway redundancy reduction (leading-edge Jaccard overlap) ───────────
+sig_mask <- !is.na(res$padj) & res$padj < 0.05
+if (sum(sig_mask) > 1L) {
+  sig_res <- res[sig_mask, ]
+  n_sig <- nrow(sig_res)
+  redundancy_table <- data.frame(
+    pathway = sig_res$pathway,
+    padj = sig_res$padj,
+    NES = sig_res$NES,
+    size = sig_res$size,
+    leadingEdgeCount = sig_res$leadingEdgeCount,
+    leadingEdge = sig_res$leadingEdge,
+    redundancy_cluster = NA_integer_,
+    is_representative = FALSE,
+    redundant_pathways = "",
+    stringsAsFactors = FALSE
+  )
+
+  # Leading-edge Jaccard similarity matrix
+  le_sets <- strsplit(sig_res$leadingEdge, "/")
+  names(le_sets) <- sig_res$pathway
+
+  cluster_id <- 0L
+  assigned <- rep(FALSE, n_sig)
+  for (i in seq_len(n_sig)) {
+    if (assigned[i]) next
+    cluster_id <- cluster_id + 1L
+    cluster_members <- i
+    for (j in seq_len(n_sig)) {
+      if (i == j || assigned[j]) next
+      overlap <- length(intersect(le_sets[[i]], le_sets[[j]]))
+      union_size <- length(union(le_sets[[i]], le_sets[[j]]))
+      jaccard <- if (union_size > 0L) overlap / union_size else 0
+      if (jaccard > 0.5) {
+        cluster_members <- c(cluster_members, j)
+        assigned[j] <- TRUE
+      }
+    }
+    assigned[i] <- TRUE
+    redundancy_table$redundancy_cluster[cluster_members] <- cluster_id
+    # Representative: smallest padj in cluster
+    rep_idx <- cluster_members[which.min(redundancy_table$padj[cluster_members])]
+    redundancy_table$is_representative[rep_idx] <- TRUE
+    non_rep <- setdiff(cluster_members, rep_idx)
+    if (length(non_rep) > 0L) {
+      redundancy_table$redundant_pathways[rep_idx] <- paste(
+        redundancy_table$pathway[non_rep], collapse = " | "
+      )
+    }
+  }
+
+  utils::write.table(redundancy_table,
+    file.path(tables_dir, paste0("gsea_pathway_redundancy_", collection, ".tsv")),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+
+  n_clusters <- length(unique(redundancy_table$redundancy_cluster))
+  n_dedup <- sum(redundancy_table$is_representative)
+  cat(sprintf("Pathway redundancy: %d significant pathways -> %d clusters (%d representative).\n",
+    n_sig, n_clusters, n_dedup))
+}
+
 if (requireNamespace("ggplot2", quietly = TRUE) && nrow(res) > 0L) {
   top <- head(res, 20L)
   top$pathway <- factor(top$pathway, levels = rev(top$pathway))

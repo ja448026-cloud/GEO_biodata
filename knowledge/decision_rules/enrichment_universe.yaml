@@ -1,0 +1,23 @@
+rule_id: enrichment_universe_v0.1
+applies_to: [enrichment_ora, enrichment_preranked_gsea]
+principle: >
+  The universe (background) for ORA must be defined before analysis.
+  For preranked GSEA, the universe is implicit in the ranked gene list.
+intent:
+  ora: Fisher's exact test requires an explicit universe.
+  preranked_gsea: The ranked list itself IS the tested set; no separate universe needed.
+universe_sources:
+  - platform: All probe-detected genes on the GPL annotation (for microarrays).
+  - expressed: All genes passing expression filtering in the current dataset.
+  - reference: All protein-coding genes from the reference genome (for RNA-seq; use cautiously).
+  - custom: A user-provided gene list.
+required_documentation:
+  - universe_source (platform/expressed/reference/custom)
+  - n_universe
+  - n_query_genes
+  - n_query_in_universe
+  - source file path
+fail_closed_when:
+  - Query genes are not a subset of the defined universe.
+  - Universe has fewer than 100 genes.
+  - More than 10% of query genes fall outside the universe.

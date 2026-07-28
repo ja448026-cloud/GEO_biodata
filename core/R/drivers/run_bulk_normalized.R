@@ -240,6 +240,23 @@ qc <- run_limma_qc(fit_result, mat_filtered, sample_map, contrast_factor)
 utils::write.table(qc$qc_table, file.path(tables_dir, "qc_checks.tsv"),
   sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
+# Paired / blocked design detection and visualization
+blocking_info <- detect_blocking_factors(design_formula, fit_result$design,
+  sample_map, contrast_factor)
+paired_plots <- character()
+if (blocking_info$has_blocking) {
+  paired_plots <- write_paired_gene_plots(
+    mat_filtered, sample_map, result_df, contrast_factor,
+    contrast$numerator, contrast$denominator,
+    blocking_info, figures_dir, tables_dir,
+    sample_id_col = sample_id_col, top_n_genes = 6L
+  )
+  if (length(paired_plots) > 0L) {
+    message(sprintf("Paired structure detected (%s=%s): generated %d paired gene plots.",
+      blocking_info$id_col, paste(blocking_info$factors, collapse = ", "), length(paired_plots)))
+  }
+}
+
 write_fallback_events(fallback_events, tables_dir)
 
 critical_outputs <- c(
@@ -257,8 +274,11 @@ critical_outputs <- c(
   file.path(figures_dir, "bulk_pca.pdf"),
   file.path(figures_dir, "sample_correlation_heatmap.pdf"),
   file.path(figures_dir, paste0("bulk_pvalue_histogram_", outputs["contrast_name"], ".pdf")),
-  file.path(figures_dir, paste0("bulk_meanvar_", outputs["contrast_name"], ".pdf"))
+  file.path(figures_dir, paste0("bulk_meanvar_", outputs["contrast_name"], ".pdf")),
+  file.path(figures_dir, paste0("bulk_ma_", outputs["contrast_name"], ".pdf")),
+  file.path(figures_dir, paste0("bulk_volcano_", outputs["contrast_name"], ".pdf"))
 )
+critical_outputs <- c(critical_outputs, paired_plots)
 
 invisible(write_output_integrity(critical_outputs, tables_dir))
 status_out <- determine_limma_status(critical_outputs, qc, fallback_events)
