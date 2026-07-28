@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 #
 # assert_workflow_result.R
-# Result-level CI assertion for geo_biodata_workflow drivers.
+# Result-level CI assertion for GEO_biodata drivers.
 # Usage: Rscript assert_workflow_result.R <run_dir> <expected_execution_state>
 #   [--expect-de] [--expect-eda] [--expect-blocked]
 #   [--check-logfc-direction] [--expect-mapping <status>]

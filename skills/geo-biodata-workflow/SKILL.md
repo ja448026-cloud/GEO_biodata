@@ -8,7 +8,7 @@ description: >
   differential analysis, and minimal diagnostic figures without project-specific assumptions.
 ---
 
-# geo_biodata_workflow
+# GEO_biodata
 
 Treat this skill as a reusable execution path — a coordination layer over existing public tools. It is NOT a universal analysis engine. Prefer author-provided processed matrices, objects, metadata, and supplementary tables before considering raw FASTQ processing.
 

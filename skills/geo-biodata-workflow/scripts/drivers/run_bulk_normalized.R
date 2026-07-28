@@ -178,6 +178,7 @@ if (identical(analysis_intent, "eda_only")) {
   )
   utils::write.table(status, file.path(manifest_dir, "workflow_status.tsv"),
     sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+  write_fallback_events(fallback_events, tables_dir)
 
   session_lines <- utils::capture.output(utils::sessionInfo())
   writeLines(session_lines, file.path(logs_dir, "sessionInfo_bulk_normalized_eda.txt"), useBytes = TRUE)
@@ -203,6 +204,7 @@ if (identical(analysis_intent, "differential_expression")) {
     )
     utils::write.table(status, file.path(manifest_dir, "workflow_status.tsv"),
       sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+    write_fallback_events(fallback_events, tables_dir)
     writeLines(c("Scale contract blocks DE:", paste("-", scale_check$conditions)),
       file.path(logs_dir, "scale_blocked.txt"), useBytes = TRUE)
     cat("BLOCKED\n", normalizePath(manifest_dir, winslash = "/", mustWork = TRUE), "\n", sep = "")
@@ -237,10 +239,7 @@ qc <- run_limma_qc(fit_result, mat_filtered, sample_map, contrast_factor)
 utils::write.table(qc$qc_table, file.path(tables_dir, "qc_checks.tsv"),
   sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
-if (nrow(fallback_events) > 0L) {
-  utils::write.table(fallback_events, file.path(tables_dir, "fallback_events.tsv"),
-    sep = "\t", quote = FALSE, row.names = FALSE, na = "")
-}
+write_fallback_events(fallback_events, tables_dir)
 
 critical_outputs <- c(
   file.path(tables_dir, "sample_mapping_used.tsv"),
@@ -250,10 +249,12 @@ critical_outputs <- c(
   file.path(tables_dir, "factor_levels_used.tsv"),
   file.path(tables_dir, "library_sizes.tsv"),
   file.path(tables_dir, "pca_coordinates.tsv"),
+  file.path(tables_dir, "sample_correlation.tsv"),
   file.path(tables_dir, "qc_checks.tsv"),
   outputs["de_path"],
   file.path(figures_dir, "bulk_library_sizes.pdf"),
   file.path(figures_dir, "bulk_pca.pdf"),
+  file.path(figures_dir, "sample_correlation_heatmap.pdf"),
   file.path(figures_dir, paste0("bulk_pvalue_histogram_", outputs["contrast_name"], ".pdf")),
   file.path(figures_dir, paste0("bulk_meanvar_", outputs["contrast_name"], ".pdf"))
 )

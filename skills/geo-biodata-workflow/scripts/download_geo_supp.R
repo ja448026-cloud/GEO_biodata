@@ -27,6 +27,13 @@ max_total_gb <- as.numeric(Sys.getenv("GEO_BIODATA_MAX_TOTAL_GB", unset = "20"))
 max_single_gb <- as.numeric(Sys.getenv("GEO_BIODATA_MAX_SINGLE_GB", unset = "10"))
 max_total_bytes <- max_total_gb * 1024^3
 max_single_bytes <- max_single_gb * 1024^3
+download_timeout_sec <- as.numeric(Sys.getenv("GEO_BIODATA_DOWNLOAD_TIMEOUT_SEC", unset = "300"))
+download_retries <- as.integer(Sys.getenv("GEO_BIODATA_DOWNLOAD_RETRIES", unset = "3"))
+if (!is.finite(download_timeout_sec) || download_timeout_sec < 1) download_timeout_sec <- 300
+if (is.na(download_retries) || download_retries < 1L) download_retries <- 3L
+old_timeout <- getOption("timeout")
+options(timeout = max(old_timeout, download_timeout_sec))
+on.exit(options(timeout = old_timeout), add = TRUE)
 
 required <- c("digest")
 if (length(args) == 3L) {
@@ -35,6 +42,31 @@ if (length(args) == 3L) {
 missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
 if (length(missing) > 0L) {
   stop("Missing required packages: ", paste(missing, collapse = ", "), call. = FALSE)
+}
+
+download_with_retries <- function(url, dest) {
+  last_error <- ""
+  for (attempt in seq_len(download_retries)) {
+    if (file.exists(dest)) unlink(dest)
+    status <- tryCatch(
+      utils::download.file(url, destfile = dest, mode = "wb", quiet = FALSE),
+      error = function(e) {
+        last_error <<- conditionMessage(e)
+        1L
+      }
+    )
+    if (identical(status, 0L) && file.exists(dest) && file.info(dest)$size > 0L) {
+      return(dest)
+    }
+    if (attempt < download_retries) {
+      wait_sec <- min(30, 2^attempt)
+      message("Download attempt ", attempt, " failed; retrying in ", wait_sec, " seconds.")
+      Sys.sleep(wait_sec)
+    }
+  }
+  if (file.exists(dest)) unlink(dest)
+  stop("Download failed after ", download_retries, " attempt(s) for ", url,
+    if (nzchar(last_error)) paste0(": ", last_error) else "", call. = FALSE)
 }
 
 if (length(args) == 2L) {
@@ -79,15 +111,7 @@ if (length(args) == 2L) {
   paths <- character(nrow(selected))
   for (i in seq_len(nrow(selected))) {
     dest <- file.path(raw_dir, basename(selected$file_name[[i]]))
-    status <- utils::download.file(
-      selected$supplement_url[[i]],
-      destfile = dest,
-      mode = "wb",
-      quiet = FALSE
-    )
-    if (!identical(status, 0L)) {
-      stop("Download failed for ", selected$supplement_url[[i]], call. = FALSE)
-    }
+    download_with_retries(selected$supplement_url[[i]], dest)
     paths[[i]] <- dest
   }
   accession <- selected$accession

@@ -94,6 +94,30 @@ expect_status(
   1L
 )
 
+legacy_url_dir <- file.path(scratch, "legacy_url_index")
+dir.create(file.path(legacy_url_dir, "resources"), recursive = TRUE, showWarnings = FALSE)
+legacy_url <- "https://example.org/GSE000000_counts.tsv.gz"
+utils::write.table(
+  data.frame(
+    fname = "GSE000000_counts.tsv.gz",
+    url = legacy_url,
+    stringsAsFactors = FALSE
+  ),
+  file.path(legacy_url_dir, "resources", "supplement_index.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE
+)
+expect_status(
+  "Download-plan URL-column fallback",
+  "Rscript",
+  c(file.path(script_dir, "generate_download_plan.R"), legacy_url_dir, "counts", "URL fallback candidate"),
+  0L
+)
+legacy_plan <- utils::read.delim(file.path(legacy_url_dir, "plans", "download_plan.tsv"),
+  stringsAsFactors = FALSE, check.names = FALSE)
+if (!identical(legacy_plan$supplement_url[[1L]], legacy_url)) {
+  fail("Download-plan URL-column fallback did not populate supplement_url.")
+}
+
 cat("== Manifest validation checks ==\n")
 manifest_fixture <- file.path(repo_root, "validation", "fixtures", "manifest_valid", "run_manifest.yaml")
 expect_status(
@@ -226,6 +250,16 @@ if (all(vapply(c("limma", "ggplot2", "yaml"), requireNamespace, logical(1), quie
     c(file.path(script_dir, "drivers", "run_bulk_normalized.R"), file.path(norm_dir, "run_manifest.yaml")),
     0L
   )
+  fallback_path <- file.path(norm_dir, "tables", "fallback_events.tsv")
+  if (!file.exists(fallback_path) || file.info(fallback_path)$size <= 0L) {
+    fail("Bulk normalized driver did not write fallback_events.tsv contract file.")
+  }
+  cor_path <- file.path(norm_dir, "tables", "sample_correlation.tsv")
+  cor_fig <- file.path(norm_dir, "figures", "sample_correlation_heatmap.pdf")
+  if (!file.exists(cor_path) || file.info(cor_path)$size <= 0L ||
+      !file.exists(cor_fig) || file.info(cor_fig)$size <= 0L) {
+    fail("Bulk normalized driver did not write sample-correlation table and heatmap.")
+  }
   norm_status <- utils::read.delim(file.path(norm_dir, "workflow_status.tsv"), stringsAsFactors = FALSE)
   valid_exec <- c("EXECUTION_COMPLETE", "BASIC_ANALYSIS_COMPLETE", "QC_REVIEW_REQUIRED")
   exec_s <- if ("execution_state" %in% names(norm_status)) norm_status$execution_state[[1L]] else norm_status$state[[1L]]

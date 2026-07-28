@@ -1,4 +1,4 @@
 interface:
-  display_name: "geo_biodata_workflow"
+  display_name: "GEO_biodata"
   short_description: "Run a lightweight GEO biodata workflow"
   default_prompt: "Use $geo-biodata-workflow with a GEO Series accession to discover public resources, choose the safest route, and run supported basic analysis with diagnostic outputs."

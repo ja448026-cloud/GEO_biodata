@@ -299,6 +299,14 @@ log_fallback <- function(events, stage, fallback_type, trigger, original_method,
   ))
 }
 
+write_fallback_events <- function(events, tables_dir) {
+  utils::write.table(
+    events,
+    file.path(tables_dir, "fallback_events.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+  )
+}
+
 # ── Output writers ───────────────────────────────────────────────────────────
 
 write_limma_outputs <- function(result, ebayes_fit, design, contrast_matrix,
@@ -401,6 +409,17 @@ write_limma_outputs <- function(result, ebayes_fit, design, contrast_matrix,
     ggplot2::geom_point(size = 3) + ggplot2::geom_text(vjust = -0.8, show.legend = FALSE) +
     ggplot2::theme_bw()
   ggplot2::ggsave(file.path(figures_dir, "bulk_pca.pdf"), pca_plot, width = 5.5, height = 4.5)
+
+  # Sample correlation
+  cor_mat <- stats::cor(mat, use = "pairwise.complete.obs")
+  utils::write.table(
+    data.frame(sample = rownames(cor_mat), cor_mat, check.names = FALSE),
+    file.path(tables_dir, "sample_correlation.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = ""
+  )
+  grDevices::pdf(file.path(figures_dir, "sample_correlation_heatmap.pdf"), width = 7, height = 7)
+  stats::heatmap(cor_mat, symm = TRUE, margins = c(8, 8), main = "Sample correlation")
+  grDevices::dev.off()
 
   # P-value histogram
   pval_df <- data.frame(pvalue = de_out$P.Value)
@@ -511,13 +530,15 @@ run_limma_qc <- function(fit_result, mat, sample_map, contrast_factor) {
     check = c("execution_state", "technical_qc", "result_signal",
       "n_genes_tested", "n_genes_non_na", "n_de_genes_padj05",
       "na_proportion", "pvalue_low_fraction",
-      "library_size_outlier_count", "pca_outlier_count"),
+      "library_size_outlier_count", "library_size_outliers",
+      "pca_outlier_count", "pca_outliers"),
     value = c(
       "EXECUTION_COMPLETE", technical_qc, signal_level,
       as.character(n_total), as.character(n_non_na), as.character(n_de),
       sprintf("%.3f", n_na_pval / n_total),
       sprintf("%.3f", if (length(non_na_pvals) >= 100L) low_pval_frac else NA_real_),
-      as.character(length(lib_outliers)), as.character(length(pca_outliers))
+      as.character(length(lib_outliers)), paste(lib_outliers, collapse = ";"),
+      as.character(length(pca_outliers)), paste(pca_outliers, collapse = ";")
     ),
     stringsAsFactors = FALSE
   )

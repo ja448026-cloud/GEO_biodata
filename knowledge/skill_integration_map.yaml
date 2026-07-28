@@ -67,7 +67,7 @@ integrated_method_sources:
       - knowledge/decision_rules/scrna_post_count_qc.yaml
 deferred_or_not_integrated:
   spatial_transcriptomics_skills:
-    reason: Spatial workflows need distinct image/coordinate assumptions and should not be folded into a generic GEO GSE-first transcriptome MVP.
+    reason: Spatial workflows need distinct image/coordinate assumptions and should not be folded into a generic GEO GSE-first transcriptome workflow.
   heavy_integration_trajectory_communication:
     reason: These are downstream specialty analyses; default GEO workflow should stop after auditable basic QC/DE/annotation readiness unless explicitly requested.
   raw_fastq_alignment_execution:

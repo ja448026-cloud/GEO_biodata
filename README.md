@@ -1,6 +1,6 @@
-# geo_biodata_workflow
+# GEO_biodata
 
-`geo_biodata_workflow` is a lightweight, agent-oriented workflow for public GEO biodata.
+`GEO_biodata` is a lightweight, agent-oriented workflow for public GEO biodata.
 
 Give an agent one GEO Series accession such as `GSE000000`; the project guides it through:
 
@@ -35,7 +35,7 @@ GSE accession -> resource inventory -> input routing -> selective download -> ma
   - reviewable download-plan generation;
   - guarded GEO supplementary-file download;
   - manifest validation before analysis;
-  - a manifest-driven bulk raw-count driver;
+  - manifest-driven bulk raw-count, bulk-normalized, microarray, and scRNA object-intake drivers;
   - a lightweight GSEA template plus deprecated fail-closed bulk/scRNA compatibility markers.
 - Route ontology, dependency profiles, and generic decision rules for repeatable agent adjudication.
 - `knowledge/skill_integration_map.yaml`, which records which reusable bio/ngs method patterns were folded into this workflow and which heavier analyses remain explicit handoffs.
@@ -54,7 +54,7 @@ Included:
 - GEO supplementary-file index and selective download.
 - Publication identifiers and open-resource links where available.
 - Manifest-driven readiness checks for bulk RNA-seq, expression matrix, microarray, and scRNA routes.
-- A route-specific `bulk_raw_counts` driver for validated raw integer count matrices.
+- Route-specific drivers for validated raw-count matrices, normalized matrices, microarray matrices, and read-only scRNA object intake.
 - Deprecated all-in-one bulk/scRNA scripts that fail closed and are not automatic entry points.
 - Basic preranked GSEA with `fgsea`.
 - GO/KEGG/Reactome/MSigDB enrichment guidance.
@@ -180,6 +180,13 @@ Rscript skills/geo-biodata-workflow/scripts/download_geo_supp.R `
 
 The plan generator and downloader intentionally refuse unrestricted patterns such as `.*`. The downloader also refuses selected rows that have not been reviewed. This prevents accidental downloads of every supplementary file in a large GEO record.
 
+For slow GEO transfers, the downloader retries failed plan-mode downloads and uses a longer timeout than base R. Override with:
+
+```powershell
+$env:GEO_BIODATA_DOWNLOAD_TIMEOUT_SEC = "600"
+$env:GEO_BIODATA_DOWNLOAD_RETRIES = "5"
+```
+
 Before analysis, create and validate a manifest:
 
 ```powershell
@@ -193,7 +200,7 @@ Rscript skills\geo-biodata-workflow/scripts/validate_manifest.R runs/GSE000000/r
 After installing or exposing the skill to an agent:
 
 ```text
-Use geo_biodata_workflow to analyze GSE000000.
+Use GEO_biodata to analyze GSE000000.
 First inventory the GEO resources, then choose the safest route.
 Do not download all supplements blindly.
 Stop with a clear status if metadata or input files are insufficient.
@@ -242,18 +249,25 @@ Use the included agent metadata:
 skills/geo-biodata-workflow/agents/openai.yaml
 ```
 
-The public project name is `geo_biodata_workflow`. The installable skill id is `geo-biodata-workflow` because current skill systems use lowercase hyphen-case names.
+The public project name is `GEO_biodata`. The installable skill id is `geo-biodata-workflow` because current skill systems use lowercase hyphen-case names.
 
 ## Repository layout
 
+The public tree is split by role:
+
+- root files are project-level documentation, license, dependency profiles, and CI configuration;
+- `skills/` is the installable agent workflow;
+- `schemas/`, `templates/`, and `knowledge/` are reusable contracts and decision rules;
+- `validation/` contains deterministic fixtures plus smoke and real-data validation notes;
+- `containers/` provides optional reproducible runtime definitions.
+
 ```text
-geo_biodata_workflow/
+GEO_biodata/
   .github/
     workflows/
       smoke.yml
   AGENTS.md
   README.md
-  PUBLIC_MVP_PLAN.md
   dependency_profiles.yaml
   containers/
   schemas/
@@ -298,6 +312,7 @@ geo_biodata_workflow/
         marker_utilities.R
   validation/
     fixtures/
+    REAL_DATA_VALIDATION_20260728.md
     SMOKE_TEST_20260727.md
     expected_download_refusal.log
     run_smoke_checks.R
@@ -329,6 +344,7 @@ Each GEO accession should produce a self-contained run directory:
     download_manifest.tsv
   derived/
   tables/
+    fallback_events.tsv
   figures/
   logs/
   scripts/
@@ -396,10 +412,12 @@ Uses limma via shared `bulk_limma_common.R`. For TPM, FPKM, CPM, or log-normaliz
 - `design_matrix.tsv`
 - `library_sizes.tsv`
 - `pca_coordinates.tsv`
+- `sample_correlation.tsv`
 - `de_results_<contrast>.tsv`
 - `qc_checks.tsv`
 - `bulk_library_sizes.pdf`
 - `bulk_pca.pdf`
+- `sample_correlation_heatmap.pdf`
 - `bulk_pvalue_histogram_<contrast>.pdf`
 - `bulk_meanvar_<contrast>.pdf`
 
@@ -442,10 +460,11 @@ Read-only inventory for Seurat RDS and H5AD objects. Never modifies the original
 
 ## Validation
 
-The current public prototype has a smoke-test note at:
+The current public workflow has smoke and real-data validation notes at:
 
 ```text
 validation/SMOKE_TEST_20260727.md
+validation/REAL_DATA_VALIDATION_20260728.md
 ```
 
 The smoke test verifies:

@@ -186,6 +186,10 @@ log_fb <- function(events, stage, ftype, trigger, orig, fallback, effect, review
     effect_on_interpretation = effect, requires_review = review,
     timestamp = format(Sys.time(), tz = "UTC", usetz = TRUE), stringsAsFactors = FALSE))
 }
+write_fb <- function(events, tables_dir) {
+  utils::write.table(events, file.path(tables_dir, "fallback_events.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+}
 fallback_events <- init_fb()
 
 # ── QC metrics ──
@@ -287,11 +291,8 @@ qc_table <- data.frame(
 )
 utils::write.table(qc_table, file.path(tables_dir, "qc_checks.tsv"), sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
-# Write fallback events
-if (nrow(fallback_events) > 0L) {
-  utils::write.table(fallback_events, file.path(tables_dir, "fallback_events.tsv"),
-    sep = "\t", quote = FALSE, row.names = FALSE, na = "")
-}
+# Write fallback events, including the empty no-fallback contract table.
+write_fb(fallback_events, tables_dir)
 
 # ── Status determination (three dimensions) ──
 

@@ -46,7 +46,18 @@ if (exists("status_values") && length(status_values) > 0L) {
   )
 }
 if (!"supplement_url" %in% names(supplements)) {
-  stop("Supplement index must include supplement_url. Re-run discover_geo.R with the updated workflow.", call. = FALSE)
+  if ("url" %in% names(supplements)) {
+    supplements$supplement_url <- supplements$url
+  } else {
+    stop("Supplement index must include supplement_url. Re-run discover_geo.R with the updated workflow.", call. = FALSE)
+  }
+}
+missing_url <- is.na(supplements$supplement_url) | !nzchar(supplements$supplement_url)
+if (any(missing_url) && "url" %in% names(supplements)) {
+  url_values <- as.character(supplements$url)
+  url_values[is.na(url_values)] <- ""
+  usable_url <- grepl("^(https?|ftp)://", url_values, ignore.case = TRUE)
+  supplements$supplement_url[missing_url & usable_url] <- url_values[missing_url & usable_url]
 }
 
 file_name <- if ("file_name" %in% names(supplements)) {

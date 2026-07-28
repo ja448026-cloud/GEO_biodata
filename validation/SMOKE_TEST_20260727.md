@@ -14,7 +14,7 @@ Date: 2026-07-27
 
 ## After Rename
 
-The project was renamed to `geo_biodata_workflow`, with installable skill id `geo-biodata-workflow`.
+The project was renamed to `GEO_biodata`, with installable skill id `geo-biodata-workflow`.
 
 - Skill validation after rename: PASS.
 - R syntax parse after rename: PASS for all 8 scripts.
@@ -44,7 +44,7 @@ Validation after simplification:
 - Validation directory was reduced to `SMOKE_TEST_20260727.md` and `expected_download_refusal.log`.
 - Developer-only validation drivers and local environment TSV files were removed from the public tree.
 - Public user run directory was standardized as `runs/<GSE>/`; `validation/runs/` is reserved for maintainer smoke tests.
-- MVP promotion criteria no longer imply that this repository vendors the host skill validator.
+- Promotion criteria no longer imply that this repository vendors the host skill validator.
 
 ## Plan-First Hardening
 

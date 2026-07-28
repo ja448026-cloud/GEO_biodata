@@ -321,7 +321,10 @@ if (!identical(supplements_status, "FAILED") && (ncol(supplements) == 0L || nrow
 }
 if (identical(supplements_status, "OK") && nrow(supplements) > 0L) {
   row_is_url <- grepl("^(https?|ftp)://", supplement_rows, ignore.case = TRUE)
-  supplements$supplement_url <- ifelse(row_is_url, supplement_rows, NA_character_)
+  url_col <- if ("url" %in% names(supplements)) as.character(supplements$url) else rep("", nrow(supplements))
+  url_col[is.na(url_col)] <- ""
+  col_is_url <- grepl("^(https?|ftp)://", url_col, ignore.case = TRUE)
+  supplements$supplement_url <- ifelse(row_is_url, supplement_rows, ifelse(col_is_url, url_col, NA_character_))
   supplements$file_name <- ifelse(
     row_is_url,
     basename(supplement_rows),
