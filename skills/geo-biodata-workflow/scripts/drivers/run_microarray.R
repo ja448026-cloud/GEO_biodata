@@ -437,6 +437,7 @@ critical_outputs <- c(
   file.path(figures_dir, paste0("bulk_meanvar_", outputs["contrast_name"], ".pdf"))
 )
 
+invisible(write_output_integrity(critical_outputs, tables_dir))
 status_out <- determine_limma_status(critical_outputs, qc, fallback_events)
 status_out$note <- paste(status_out$note, "| mapping:", mapping_status_label)
 

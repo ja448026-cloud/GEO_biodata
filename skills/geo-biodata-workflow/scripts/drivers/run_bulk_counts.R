@@ -190,6 +190,20 @@ write_fb <- function(events, tables_dir) {
   utils::write.table(events, file.path(tables_dir, "fallback_events.tsv"),
     sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 }
+write_output_integrity <- function(output_paths, tables_dir) {
+  info <- file.info(output_paths)
+  df <- data.frame(
+    path = output_paths,
+    exists = file.exists(output_paths),
+    size_bytes = ifelse(file.exists(output_paths), info$size, NA_integer_),
+    required = TRUE,
+    status = ifelse(file.exists(output_paths) & info$size > 0, "OK", "MISSING_OR_EMPTY"),
+    stringsAsFactors = FALSE
+  )
+  utils::write.table(df, file.path(tables_dir, "output_integrity.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+  df
+}
 fallback_events <- init_fb()
 
 # ── QC metrics ──
@@ -307,6 +321,7 @@ critical_outputs <- c(
   file.path(figures_dir, "bulk_pca.pdf"),
   file.path(figures_dir, paste0("bulk_pvalue_histogram_", contrast_name, ".pdf"))
 )
+invisible(write_output_integrity(critical_outputs, tables_dir))
 outputs_complete <- all(file.exists(critical_outputs) & file.info(critical_outputs)$size > 0)
 
 execution_state <- if (outputs_complete) "EXECUTION_COMPLETE" else "EXECUTION_FAILED"

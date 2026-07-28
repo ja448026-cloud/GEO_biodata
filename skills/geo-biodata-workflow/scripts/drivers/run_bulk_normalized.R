@@ -164,6 +164,7 @@ if (identical(analysis_intent, "eda_only")) {
     file.path(figures_dir, "expression_distributions.pdf"),
     file.path(figures_dir, "bulk_pca.pdf")
   )
+  invisible(write_output_integrity(critical_outputs, tables_dir))
   outputs_exist <- all(file.exists(critical_outputs) & file.info(critical_outputs)$size > 0)
 
   status <- data.frame(
@@ -259,6 +260,7 @@ critical_outputs <- c(
   file.path(figures_dir, paste0("bulk_meanvar_", outputs["contrast_name"], ".pdf"))
 )
 
+invisible(write_output_integrity(critical_outputs, tables_dir))
 status_out <- determine_limma_status(critical_outputs, qc, fallback_events)
 
 status <- data.frame(
