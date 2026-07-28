@@ -17,7 +17,7 @@ Use the smallest skill that matches the current task:
 | Bulk raw-count, bulk-normalized, or microarray DE/QC from a validated manifest | `geo-biodata-bulk` |
 | Preranked GSEA from an existing DE/rank table and local GMT file | `geo-biodata-enrichment` |
 | Read-only scRNA object inventory for Seurat/H5AD/RDS/MTX | `geo-biodata-scrna-intake` |
-| Simple source-table-linked diagnostic plot planning and QA | `geo-biodata-figure` |
+| Independent source-table-linked figure planning, generation guidance, and QA | `geo-biodata-figure` |
 | Legacy prompts naming the old entry point | `geo-biodata-workflow` |
 
 Stable executor paths live under `core/R/`. The original script bundle remains under `skills/geo-biodata-workflow/scripts/` as a compatibility implementation while the public entry points move to the slimmer module layout.
@@ -73,6 +73,15 @@ $env:GEO_BIODATA_DOWNLOAD_TIMEOUT_SEC = "600"
 $env:GEO_BIODATA_DOWNLOAD_RETRIES = "5"
 ```
 
+Linux/macOS shells use the same `Rscript` commands with `/` paths, for example:
+
+```bash
+mkdir -p runs/GSE000000
+Rscript core/R/check_environment.R runs/GSE000000/environment.tsv
+Rscript core/R/bootstrap_environment.R --profile intake --check
+Rscript core/R/discover_geo.R GSE000000 runs/GSE000000
+```
+
 ## Analysis Start
 
 Before analysis, create and validate a manifest:
@@ -94,6 +103,8 @@ Then select exactly one route:
 Use `geo-biodata-enrichment` only after a DE or ranked table exists. The current executable enrichment driver is preranked GSEA with a local GMT file; GO/KEGG/Reactome/ORA remain guidance handoffs until gene-ID mapping and background-universe contracts are supplied.
 
 Use `geo-biodata-scrna-intake` for object inventory only. If reclustering, marker review, annotation, or condition DE is needed, use the handoff notes in `docs/handoffs/` with dedicated local single-cell skills. Cluster markers are descriptive; condition DE in scRNA should use sample/donor-level pseudobulk.
+
+Use `geo-biodata-figure` after source tables, DE/rank tables, route-driver diagnostics, or inspected objects exist. It is an independent omics visualization playbook, not an external skill router and not a statistical executor. Agents may use currently available R, Python, or user-specified plotting tools, but figures must stay source-linked and must not change upstream statistics.
 
 ## Dependency Profiles
 
@@ -132,6 +143,8 @@ runs/GSE000000/
 ```
 
 Preserve downloaded files unchanged. Analyze derived copies or explicit local paths recorded in `run_manifest.yaml`.
+
+Formal figures may add `tables/figure_sources/`, `scripts/figures/`, `figure_plans/`, `figure_qa/`, and `captions/`. Diagnostic and exploratory figures require at minimum a source table, plotting script, and figure file; manuscript-facing figures require the full plan/source/script/PDF/PNG/QA/caption contract.
 
 ## Validation
 

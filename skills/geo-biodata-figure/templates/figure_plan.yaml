@@ -1,0 +1,26 @@
+figure_id: fig_example
+stage: diagnostic
+question: "What should this figure make clear?"
+source:
+  path: tables/example.tsv
+  columns: []
+  scale: ""
+unit: biological_sample
+plot:
+  type: scatter
+  x: ""
+  y: ""
+  color: ""
+  shape: ""
+filtering:
+  rule: none
+labels:
+  rule: none
+statistics:
+  source: none
+  contrast: ""
+outputs:
+  source_table: tables/figure_sources/fig_example_source.tsv
+  script: scripts/figures/fig_example.R
+  pdf: figures/fig_example.pdf
+  png: figures/fig_example.png

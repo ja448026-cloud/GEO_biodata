@@ -15,7 +15,7 @@ Use this as the default entry point. Route to the smallest executable module and
 | Bulk raw-count, normalized, or microarray DE/QC | `geo-biodata-bulk` | `core/R/drivers/run_bulk_*.R`, `core/R/drivers/run_microarray.R` |
 | Preranked GSEA from an existing DE/rank table and GMT | `geo-biodata-enrichment` | `core/R/enrichment/run_preranked_gsea.R` |
 | Seurat/H5AD/RDS object inventory without reclustering | `geo-biodata-scrna-intake` | `core/R/scrna/inspect_object.R` |
-| Single-purpose plot planning, source linkage, and QA | `geo-biodata-figure` | local figure skills; route driver plots when available |
+| Single-purpose plot planning, source linkage, figure generation guidance, and QA | `geo-biodata-figure` | independent playbook; agent-authored R/Python plotting from source-linked outputs |
 
 ## Defaults
 

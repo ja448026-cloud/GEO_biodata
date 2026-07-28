@@ -1,5 +1,4 @@
 interface:
   display_name: "GEO_biodata Figure"
-  short_description: "Route GEO_biodata plots to existing figure skills"
-  default_prompt: "Use $geo-biodata-figure to make or polish one source-linked GEO_biodata diagnostic figure using the appropriate local figure skill."
-
+  short_description: "Independent source-linked omics figure playbook"
+  default_prompt: "Use $geo-biodata-figure to choose, generate, and audit one source-linked GEO_biodata figure from existing results."

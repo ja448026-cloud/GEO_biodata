@@ -68,6 +68,51 @@ for (path in sort(skill_files)) {
   cat("SKILL_OK\t", basename(dirname(path)), "\n", sep = "")
 }
 
+cat("== Figure playbook checks ==\n")
+figure_skill_dir <- file.path(repo_root, "skills", "geo-biodata-figure")
+required_figure_files <- file.path(figure_skill_dir, c(
+  "SKILL.md",
+  "references/principles-and-qa.md",
+  "references/figure-decision-matrix.md",
+  "references/omics-plot-recipes.md",
+  "references/manuscript-figure-planning.md",
+  "templates/figure_plan.yaml",
+  "templates/figure_spec.yaml",
+  "templates/figure_qa.tsv",
+  "templates/figure_caption.md"
+))
+required_figure_files <- c(required_figure_files, file.path(repo_root, "knowledge", "visualization_source_registry.yaml"))
+missing_figure_files <- required_figure_files[!file.exists(required_figure_files)]
+if (length(missing_figure_files) > 0L) {
+  fail(paste("Figure playbook files missing:", paste(missing_figure_files, collapse = ", ")))
+}
+figure_skill_text <- paste(readLines(file.path(figure_skill_dir, "SKILL.md"), warn = FALSE), collapse = "\n")
+if (!grepl("skill_mode`: playbook", figure_skill_text, fixed = TRUE) ||
+    !grepl("external_skill_dependency`: none", figure_skill_text, fixed = TRUE)) {
+  fail("Figure skill must declare playbook mode and no external skill dependency.")
+}
+invisible(yaml::yaml.load_file(file.path(repo_root, "knowledge", "visualization_source_registry.yaml")))
+blocked_skill_names <- c(
+  paste0("figure", "-", "planner"),
+  paste0("nature", "-", "figure"),
+  paste0("omics", "-", "figure", "-", "qa")
+)
+repo_text_files <- list.files(repo_root, all.files = TRUE, recursive = TRUE, full.names = TRUE, no.. = TRUE)
+repo_text_files <- repo_text_files[file.info(repo_text_files)$isdir == FALSE]
+blocked_hits <- character()
+for (path in repo_text_files) {
+  rel <- sub(paste0("^", gsub("\\\\", "/", normalizePath(repo_root, winslash = "/")), "/?"), "", normalizePath(path, winslash = "/"))
+  if (grepl("^\\.git/", rel)) next
+  content <- tryCatch(readLines(path, warn = FALSE), error = function(e) character())
+  if (any(vapply(blocked_skill_names, function(pattern) any(grepl(pattern, content, fixed = TRUE)), logical(1)))) {
+    blocked_hits <- c(blocked_hits, rel)
+  }
+}
+if (length(blocked_hits) > 0L) {
+  fail(paste("Figure playbook still names removed external skill dependencies:", paste(unique(blocked_hits), collapse = ", ")))
+}
+cat("FIGURE_PLAYBOOK_OK\n")
+
 cat("== Download guard checks ==\n")
 scratch <- file.path(tempdir(), paste0("geo_biodata_smoke_", Sys.getpid()))
 dir.create(file.path(scratch, "resources"), recursive = TRUE, showWarnings = FALSE)

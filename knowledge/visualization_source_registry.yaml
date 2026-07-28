@@ -1,0 +1,96 @@
+schema_version: 0.1
+purpose: >
+  Record public visualization sources used to maintain the GEO_biodata figure
+  playbook. Sources support summarized principles only; do not copy figures,
+  proprietary templates, long text passages, or large code blocks.
+source_levels:
+  A: method papers, open practice guides, and official software documentation
+  B: journal guidance and high-quality omics figure conventions
+  C: local skills, tutorials, and blog posts used only as candidate experience
+  D: single-paper visual styles used only as inspiration
+sources:
+  - source_id: rougier_2014_better_figures
+    level: A
+    confidence: high
+    title: "Ten Simple Rules for Better Figures"
+    type: open_access_guideline
+    doi: "10.1371/journal.pcbi.1003833"
+    use:
+      - message-first figure design
+      - readability and traceable design decisions
+    license_note: "Open-access article; summarize principles in original wording."
+  - source_id: weissgerber_2015_bar_line
+    level: A
+    confidence: high
+    title: "Beyond Bar and Line Graphs: Time for a New Data Presentation Paradigm"
+    type: open_access_method_guidance
+    doi: "10.1371/journal.pbio.1002128"
+    use:
+      - show individual observations
+      - avoid summary-only bar plots for small sample biological data
+    license_note: "Open-access article; summarize principles and do not reproduce article figures."
+  - source_id: wong_2011_color_blindness
+    level: B
+    confidence: high
+    title: "Points of View: Color blindness"
+    type: journal_guidance
+    doi: "10.1038/nmeth.1618"
+    use:
+      - color accessibility
+      - redundant visual encodings
+    license_note: "Cite and paraphrase; do not reproduce article graphics."
+  - source_id: gehlenborg_wong_2012_color
+    level: B
+    confidence: high
+    title: "Mapping quantitative data to color"
+    type: journal_guidance
+    doi: "10.1038/nmeth.2134"
+    use:
+      - perceptual continuous color maps
+      - avoid misleading rainbow-like continuous scales
+    license_note: "Cite and paraphrase; do not reproduce article graphics."
+  - source_id: wong_2011_overview
+    level: B
+    confidence: medium
+    title: "The overview figure"
+    type: journal_guidance
+    doi: "10.1038/nmeth0511-365"
+    use:
+      - overview schematic planning
+      - message hierarchy in workflow diagrams
+    license_note: "Use as summarized design guidance only."
+  - source_id: marai_2019_network_figures
+    level: A
+    confidence: high
+    title: "Ten simple rules to create biological network figures for communication"
+    type: open_access_guideline
+    doi: "10.1371/journal.pcbi.1007244"
+    use:
+      - reduced network design
+      - node and edge meaning before layout
+    license_note: "Open-access article; summarize principles in original wording."
+  - source_id: ggplot2_book
+    level: A
+    confidence: high
+    title: "ggplot2: Elegant Graphics for Data Analysis"
+    type: official_documentation
+    url: "https://ggplot2-book.org/"
+    use:
+      - layered grammar
+      - aesthetic mappings and facets
+    license_note: "Use documented APIs; do not copy long text or code examples."
+  - source_id: complexheatmap_reference
+    level: A
+    confidence: high
+    title: "ComplexHeatmap Complete Reference"
+    type: official_documentation
+    url: "https://jokergoo.github.io/ComplexHeatmap-reference/book/"
+    use:
+      - heatmap annotations
+      - matrix visualization contracts
+    license_note: "Use documented APIs; do not copy long text or code examples."
+maintenance_rules:
+  - Core principles need at least one A or B source.
+  - C or D sources may support candidate experience only and must keep confidence marked.
+  - Single-paper style choices must not become mandatory generic rules.
+  - Record DOI or URL, source type, confidence, and license/use note for new sources.

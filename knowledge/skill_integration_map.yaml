@@ -65,6 +65,18 @@ integrated_method_sources:
     implemented_as:
       - knowledge/decision_rules/pseudobulk_requirement.yaml
       - knowledge/decision_rules/scrna_post_count_qc.yaml
+  public_visualization_guidance:
+    borrowed_patterns:
+      - start figures from a single scientific question and explicit data unit
+      - keep source table, plotting script, output, and QA traceable
+      - use external visualization sources as summarized method guidance, not runtime dependencies
+    implemented_as:
+      - skills/geo-biodata-figure/SKILL.md
+      - skills/geo-biodata-figure/references/principles-and-qa.md
+      - skills/geo-biodata-figure/references/figure-decision-matrix.md
+      - skills/geo-biodata-figure/references/omics-plot-recipes.md
+      - skills/geo-biodata-figure/references/manuscript-figure-planning.md
+      - knowledge/visualization_source_registry.yaml
 deferred_or_not_integrated:
   spatial_transcriptomics_skills:
     reason: Spatial workflows need distinct image/coordinate assumptions and should not be folded into a generic GEO GSE-first transcriptome workflow.

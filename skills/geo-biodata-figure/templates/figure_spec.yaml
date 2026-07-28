@@ -1,0 +1,16 @@
+figure_id: fig_example
+purpose: diagnostic
+message: ""
+data_contract:
+  source_table: tables/figure_sources/fig_example_source.tsv
+  biological_unit: biological_sample
+  required_columns: []
+plot_contract:
+  plot_type: ""
+  aesthetics: {}
+  transform_notes: ""
+  label_rule: none
+qa_contract:
+  scientific_checks_required: true
+  visual_checks_required: true
+  integrity_checks_required: true
