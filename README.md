@@ -20,7 +20,7 @@ Use the smallest skill that matches the current task:
 | Independent source-table-linked figure planning, generation guidance, and QA | `geo-biodata-figure` |
 | Legacy prompts naming the old entry point | `geo-biodata-workflow` |
 
-Stable executor paths live under `core/R/`. The original script bundle remains under `skills/geo-biodata-workflow/scripts/` as a compatibility implementation while the public entry points move to the slimmer module layout.
+Stable executor paths live under `core/R/`. The legacy workflow skill remains for old prompts, but new user-facing commands should use `core/R/`.
 
 ## Fast Download-Only Start
 

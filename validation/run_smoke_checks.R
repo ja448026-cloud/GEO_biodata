@@ -13,8 +13,9 @@ this_file <- if (length(file_arg) > 0L) {
   normalizePath(file.path("validation", "run_smoke_checks.R"), mustWork = TRUE)
 }
 repo_root <- normalizePath(file.path(dirname(this_file), ".."), mustWork = TRUE)
-script_dir <- file.path(repo_root, "skills", "geo-biodata-workflow", "scripts")
 core_dir <- file.path(repo_root, "core", "R")
+script_dir <- core_dir
+legacy_script_dir <- file.path(repo_root, "skills", "geo-biodata-workflow", "scripts")
 
 fail <- function(message) {
   stop(message, call. = FALSE)
@@ -31,7 +32,7 @@ expect_status <- function(label, command, args, expected_status) {
 }
 
 cat("== Parse R scripts ==\n")
-script_roots <- c(script_dir, core_dir)
+script_roots <- c(core_dir, legacy_script_dir)
 r_files <- unlist(lapply(script_roots, list.files, pattern = "\\.R$", full.names = TRUE, recursive = TRUE),
   use.names = FALSE)
 for (path in sort(r_files)) {
@@ -153,7 +154,7 @@ if (!any(tolower(plan$selected) %in% c("true", "1", "yes"))) {
 expect_status(
   "Unreviewed plan download refusal",
   "Rscript",
-  c(file.path(script_dir, "download_geo_supp.R"), plan_path, file.path(scratch, "raw")),
+  c(file.path(script_dir, "download_reviewed_files.R"), plan_path, file.path(scratch, "raw")),
   1L
 )
 
@@ -163,14 +164,14 @@ utils::write.table(plan, plan_path, sep = "\t", quote = FALSE, row.names = FALSE
 expect_status(
   "Invalid URL download refusal",
   "Rscript",
-  c(file.path(script_dir, "download_geo_supp.R"), plan_path, file.path(scratch, "raw")),
+  c(file.path(script_dir, "download_reviewed_files.R"), plan_path, file.path(scratch, "raw")),
   1L
 )
 
 expect_status(
   "Legacy broad regex refusal",
   "Rscript",
-  c(file.path(script_dir, "download_geo_supp.R"), "GSE000000", file.path(scratch, "raw"), ".*"),
+  c(file.path(script_dir, "download_reviewed_files.R"), "GSE000000", file.path(scratch, "raw"), ".*"),
   1L
 )
 
@@ -293,9 +294,20 @@ expect_status(
   0L
 )
 
-cat("== Core wrapper checks ==\n")
+cat("== Core executor checks ==\n")
+core_text <- unlist(lapply(list.files(core_dir, pattern = "\\.R$", full.names = TRUE, recursive = TRUE), readLines, warn = FALSE))
+forbidden_core_patterns <- c(
+  "run_legacy",
+  "wrapper forwarding",
+  "skills/geo-biodata-workflow/scripts"
+)
+for (pattern in forbidden_core_patterns) {
+  if (any(grepl(pattern, core_text, fixed = TRUE))) {
+    fail(paste("Core executor still contains forbidden wrapper pattern:", pattern))
+  }
+}
 expect_status(
-  "Core manifest validation wrapper",
+  "Core manifest validation executor",
   "Rscript",
   c(file.path(core_dir, "validate_manifest.R"), manifest_fixture),
   0L

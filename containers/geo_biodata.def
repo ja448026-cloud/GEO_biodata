@@ -7,4 +7,4 @@ From: rocker/r-ver:4.5.0
 
 %runscript
     cd /workflow
-    Rscript skills/geo-biodata-workflow/scripts/bootstrap_environment.R --profile core --check
+    Rscript core/R/bootstrap_environment.R --profile core --check

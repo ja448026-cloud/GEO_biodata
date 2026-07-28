@@ -6,4 +6,4 @@ RUN R -q -e "install.packages(c('BiocManager','httr2','jsonlite','digest','yaml'
 WORKDIR /workflow
 COPY . /workflow
 
-CMD ["Rscript", "skills/geo-biodata-workflow/scripts/bootstrap_environment.R", "--profile", "core", "--check"]
+CMD ["Rscript", "core/R/bootstrap_environment.R", "--profile", "core", "--check"]
