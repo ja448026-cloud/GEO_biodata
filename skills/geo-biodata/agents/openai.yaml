@@ -1,0 +1,4 @@
+interface:
+  display_name: "GEO_biodata"
+  short_description: "Route GEO tasks to executable modules"
+  default_prompt: "Use $geo-biodata with a GEO accession or GEO_biodata run directory. Start with intake unless I provide a validated manifest or DE/rank table."

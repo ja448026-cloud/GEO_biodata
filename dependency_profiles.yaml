@@ -1,5 +1,5 @@
 schema_version: 0.2
-default_profile: core
+default_profile: manifest
 cache_policy:
   repo_commits_raw_data: false
   repo_commits_package_libraries: false
@@ -7,47 +7,65 @@ cache_policy:
     - R_USER_CACHE_DIR
     - RENV_PATHS_CACHE
 profiles:
-  core:
-    description: Resource discovery, guarded downloads, manifest validation, and smoke tests.
+  manifest:
+    description: Manifest validation, schemas, and quick smoke checks.
     packages:
-      cran: [httr2, jsonlite, digest, yaml]
+      cran: [yaml, digest]
+      bioc: []
+  intake:
+    description: GEO resource discovery, publication links, reviewed downloads, file hashes, and intake handoff.
+    extends: [manifest]
+    packages:
+      cran: [httr2, jsonlite]
       bioc: [GEOquery, Biobase]
+  core:
+    description: Compatibility alias for the intake profile.
+    extends: [intake]
+    packages:
+      cran: []
+      bioc: []
   bulk_limma:
     description: >
       Normalized-matrix and microarray limma QC, DE, and diagnostic plots.
       - run_bulk_normalized.R: limma, ggplot2
       - run_microarray.R: limma, ggplot2, Biobase
       - bulk_limma_common.R: limma, ggplot2
-    extends: [core]
+    extends: [manifest]
     packages:
       cran: [ggplot2, pheatmap]
       bioc: [limma]
   bulk_counts:
     description: >
-      Bulk raw-count QC and DE with count-aware Bioconductor methods.
-      - run_bulk_counts.R: DESeq2, edgeR, SummarizedExperiment, ggplot2
-    extends: [core]
+      Bulk raw-count QC and DE with DESeq2.
+      - run_bulk_counts.R: DESeq2, SummarizedExperiment, ggplot2
+    extends: [manifest]
     packages:
       cran: [ggplot2]
-      bioc: [DESeq2, edgeR, SummarizedExperiment]
+      bioc: [DESeq2, SummarizedExperiment]
   bulk:
     description: Compatibility profile for all bulk and microarray drivers.
     extends: [bulk_limma, bulk_counts]
     packages:
       cran: []
       bioc: []
-  enrichment:
-    description: Preranked GSEA and over-representation analysis after a valid DE table.
-    extends: [bulk_limma]
+  enrichment_gsea:
+    description: Preranked GSEA with fgsea and a local GMT after a valid DE/rank table.
+    extends: [manifest]
     packages:
-      cran: []
-      bioc: [fgsea, clusterProfiler, msigdbr, org.Hs.eg.db, org.Mm.eg.db, ReactomePA]
+      cran: [ggplot2]
+      bioc: [fgsea]
+  enrichment:
+    description: Compatibility profile for current and planned enrichment workflows.
+    extends: [enrichment_gsea]
+    packages:
+      cran: [msigdbr]
+      bioc: [clusterProfiler, org.Hs.eg.db, org.Mm.eg.db, ReactomePA]
   scrna_intake:
     description: >
       Single-cell object intake and read-only inventory for SeuratObject, sparse matrices,
       SingleCellExperiment, and H5AD readers when available.
       H5AD support requires at least one of: anndataR (pure R, recommended) or zellkonverter.
-    extends: [core]
+    extends: [manifest]
     packages:
       cran: [SeuratObject, Matrix]
       bioc: [SingleCellExperiment, anndataR]

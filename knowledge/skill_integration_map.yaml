@@ -27,7 +27,7 @@ integrated_method_sources:
     implemented_as:
       - schemas/run_manifest.schema.yaml
       - knowledge/decision_rules/bulk_input_scale.yaml
-      - skills/geo-biodata-workflow/scripts/drivers/run_bulk_counts.R
+      - core/R/drivers/run_bulk_counts.R
   ngs_scrna_seq:
     borrowed_patterns:
       - split scRNA into FASTQ-to-count, post-count QC/annotation, and downstream stats

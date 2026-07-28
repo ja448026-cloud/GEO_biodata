@@ -1,5 +1,0 @@
-interface:
-  display_name: "GEO_biodata Download"
-  short_description: "Inventory GEO resources and download reviewed files"
-  default_prompt: "Use $geo-biodata-intake-download for a GEO accession. Inventory metadata, DOI/publication supplements, make a reviewed download plan, and stop before analysis."
-

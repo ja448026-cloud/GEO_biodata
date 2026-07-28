@@ -1,0 +1,4 @@
+interface:
+  display_name: "GEO_biodata Enrichment"
+  short_description: "Run executable preranked fgsea from DE/rank tables"
+  default_prompt: "Use $geo-biodata-enrichment when I have a GEO_biodata DE or rank table plus a local GMT file and want preranked GSEA."

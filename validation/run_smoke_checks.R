@@ -14,6 +14,7 @@ this_file <- if (length(file_arg) > 0L) {
 }
 repo_root <- normalizePath(file.path(dirname(this_file), ".."), mustWork = TRUE)
 script_dir <- file.path(repo_root, "skills", "geo-biodata-workflow", "scripts")
+core_dir <- file.path(repo_root, "core", "R")
 
 fail <- function(message) {
   stop(message, call. = FALSE)
@@ -30,10 +31,14 @@ expect_status <- function(label, command, args, expected_status) {
 }
 
 cat("== Parse R scripts ==\n")
-r_files <- list.files(script_dir, pattern = "\\.R$", full.names = TRUE, recursive = TRUE)
+script_roots <- c(script_dir, core_dir)
+r_files <- unlist(lapply(script_roots, list.files, pattern = "\\.R$", full.names = TRUE, recursive = TRUE),
+  use.names = FALSE)
 for (path in sort(r_files)) {
   parse(file = path)
-  cat("PARSE_OK\t", basename(path), "\n", sep = "")
+  rel_path <- sub(paste0("^", gsub("\\\\", "/", normalizePath(repo_root, winslash = "/")), "/?"),
+    "", normalizePath(path, winslash = "/"))
+  cat("PARSE_OK\t", rel_path, "\n", sep = "")
 }
 
 cat("== Skill frontmatter checks ==\n")
@@ -230,9 +235,24 @@ expect_status(
 
 cat("== Dependency bootstrap plan ==\n")
 expect_status(
-  "Core dependency plan",
+  "Manifest dependency plan",
+  "Rscript",
+  c(file.path(core_dir, "bootstrap_environment.R"), "--profile", "manifest", "--plan"),
+  0L
+)
+
+expect_status(
+  "Legacy core dependency plan",
   "Rscript",
   c(file.path(script_dir, "bootstrap_environment.R"), "--profile", "core", "--plan"),
+  0L
+)
+
+cat("== Core wrapper checks ==\n")
+expect_status(
+  "Core manifest validation wrapper",
+  "Rscript",
+  c(file.path(core_dir, "validate_manifest.R"), manifest_fixture),
   0L
 )
 
@@ -391,6 +411,10 @@ expect_status(
 
 cat("== Dangerous-pattern checks ==\n")
 script_text <- unlist(lapply(list.files(script_dir, pattern = "\\.R$", full.names = TRUE, recursive = TRUE), readLines, warn = FALSE))
+script_text <- c(
+  script_text,
+  unlist(lapply(list.files(core_dir, pattern = "\\.R$", full.names = TRUE, recursive = TRUE), readLines, warn = FALSE))
+)
 dangerous_patterns <- c(
   "max\\(vals.*<\\s*50",
   "as\\.matrix\\(counts_raw\\)"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "GEO_biodata Intake"
+  short_description: "Inventory, download, audit, and hand off GEO resources"
+  default_prompt: "Use $geo-biodata-intake for a GEO accession. Inventory metadata and open supplements, download reviewed files, audit inputs, and write intake_handoff.yaml."

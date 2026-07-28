@@ -1,35 +1,35 @@
 ---
 name: geo-biodata-figure
-description: GEO_biodata lightweight diagnostic plotting workflow. Use when the user wants one simple source-table-linked visualization from GEO_biodata outputs, such as PCA, sample correlation heatmap, library size, volcano, MA, p-value histogram, GO dotplot, GSEA NES barplot, UMAP, or marker dotplot.
+description: GEO_biodata figure reference and plotting router. Use when the user wants simple source-linked visualizations from GEO_biodata outputs, figure planning, figure QA, or one-step diagnostic plot polishing. This skill delegates plotting style and QA to existing local figure skills instead of reimplementing a full plotting framework.
 ---
 
 # GEO_biodata Figure
 
-Use this to make one diagnostic figure from an existing table or object. Do not build large composite figures by default.
+Use this as a light visualization layer. It is not a statistical module.
 
-## Figure Contract
+## Execution Boundary
 
-Before plotting, record:
+Prefer plots already written by the active route driver:
+
+- bulk library size, PCA, p-value histogram, mean-variance, sample correlation.
+- GSEA NES dot/bar plot from `core/R/enrichment/run_preranked_gsea.R`.
+- scRNA inventory plots only after a dedicated scRNA executor supports them.
+
+For custom plotting, use local figure skills as the executor:
+
+- `figure-planner`: decide the single purpose of the plot.
+- `nature-figure`: backend-specific R/Python scientific plotting and export.
+- `omics-figure-qa`: source-table linkage, overcrowding, pathway-label readability, and panel QA.
+
+## Contract
+
+Every GEO_biodata figure should record:
 
 - source table or object path.
-- one-sentence purpose of the plot.
-- plot type.
+- script or driver that generated it.
+- one-sentence purpose.
 - filtering rule.
 - output path.
 
-## Style Defaults
-
-- One plot, one message.
-- Prefer PDF/SVG for editable scientific plots and PNG only for quick preview.
-- Keep labels readable; shorten long pathway names in the plot and keep full names in the source table.
-- Use restrained, consistent colors.
-- Do not change analysis values while polishing plots.
-
-## Reference Skills
-
-Use local figure skills as needed:
-
-- `figure-planner` for claim/panel logic.
-- `nature-figure` for backend-specific publication plotting and export standards.
-- `omics-figure-qa` for source-table linkage, overcrowding, and panel usability checks.
+Do not combine unrelated panels by default. One simple figure per step is preferred.
 

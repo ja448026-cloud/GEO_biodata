@@ -1,5 +1,0 @@
-interface:
-  display_name: "GEO_biodata Router"
-  short_description: "Choose the narrow GEO_biodata skill for the current task"
-  default_prompt: "Use $geo-biodata-router to route my GEO_biodata request to download, bulk analysis, enrichment, scRNA, figure, or maintainer workflows."
-

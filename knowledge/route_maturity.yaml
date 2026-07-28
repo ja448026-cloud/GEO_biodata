@@ -1,0 +1,39 @@
+schema_version: 1.0
+routes:
+  intake:
+    maturity: beta
+    executor: core/R/discover_geo.R
+    notes:
+      - GEO metadata, supplement inventory, publication links, reviewed download, and file audit are supported.
+  bulk_raw_counts:
+    maturity: beta
+    executor: core/R/drivers/run_bulk_counts.R
+    backend: DESeq2
+    validated_scenarios:
+      - simple two-group raw count fixture
+  bulk_normalized:
+    maturity: beta
+    executor: core/R/drivers/run_bulk_normalized.R
+    backend: limma
+    validated_scenarios:
+      - paired gastric cancer FPKM transformed to log2(FPKM+1)
+  microarray_series_matrix:
+    maturity: experimental
+    executor: core/R/drivers/run_microarray.R
+    backend: limma
+    known_limitations:
+      - real GPL validation still needed before beta
+      - platform annotation coverage varies by GPL
+  enrichment_preranked_gsea:
+    maturity: alpha
+    executor: core/R/enrichment/run_preranked_gsea.R
+    backend: fgsea
+    known_limitations:
+      - requires local GMT and explicit rank column
+      - GO/KEGG/Reactome/ORA are handoff-only until mapping/universe drivers are implemented
+  scrna_author_object:
+    maturity: experimental
+    executor: core/R/scrna/inspect_object.R
+    known_limitations:
+      - read-only object intake
+      - clustering, marker annotation, and condition DE are external handoffs

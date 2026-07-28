@@ -1,5 +1,0 @@
-interface:
-  display_name: "GEO_biodata Enrichment"
-  short_description: "Run GO/KEGG/Reactome/GSEA from DE outputs"
-  default_prompt: "Use $geo-biodata-bulk-enrichment after a GEO_biodata DE table exists to run ORA or preranked GSEA with recorded gene IDs and background."
-

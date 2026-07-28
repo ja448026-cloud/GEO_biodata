@@ -1,5 +1,0 @@
-interface:
-  display_name: "GEO_biodata Pseudobulk"
-  short_description: "Run scRNA condition DE by sample-level pseudobulk"
-  default_prompt: "Use $geo-biodata-scrna-pseudobulk when a GEO scRNA dataset needs condition DE within reviewed cell types using sample or donor as the replicate unit."
-

@@ -1,5 +1,0 @@
-interface:
-  display_name: "GEO_biodata scRNA Markers"
-  short_description: "Recluster scRNA data and review markers when requested"
-  default_prompt: "Use $geo-biodata-scrna-cluster-marker only after scRNA intake, and keep clustering, marker ranking, annotation, and pseudobulk DE boundaries explicit."
-

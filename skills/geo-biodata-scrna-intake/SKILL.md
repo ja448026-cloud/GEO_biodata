@@ -5,28 +5,38 @@ description: GEO_biodata single-cell object intake workflow. Use when the user h
 
 # GEO_biodata scRNA Intake
 
-This skill inventories single-cell objects. It does not recluster or assign cell types by default.
+This skill inventories single-cell objects. It does not recluster, annotate new cell types, compute markers, or run condition DE.
 
 ## Required Context
 
-Read only scRNA intake rules:
+Read only the intake rules needed to inspect object content and decide whether downstream single-cell skills are appropriate:
 
 - `../geo-biodata-workflow/references/basic-scrna.md`
 - `../../knowledge/decision_rules/scrna_author_object.yaml`
 - `../../knowledge/decision_rules/scrna_object_intake.yaml`
 - `../../knowledge/decision_rules/pseudobulk_requirement.yaml`
+- `../../docs/handoffs/scrna-clustering.md`
+- `../../docs/handoffs/scrna-pseudobulk.md`
 
 ## Driver
 
 Validate the manifest, then run:
 
 ```powershell
-Rscript skills\geo-biodata-workflow\scripts\drivers\inspect_scrna_object.R runs\GSE000000\run_manifest.yaml
+Rscript core\R\validate_manifest.R runs\GSE000000\run_manifest.yaml
+Rscript core\R\scrna\inspect_object.R runs\GSE000000\run_manifest.yaml
 ```
 
 ## Outputs
 
 Expect object inventory, metadata fields, assay/layer availability, author-label fields, sample/donor candidates, and a clear status.
 
-If raw counts and sample-level biological replication are present and the user asks for condition DE, route to pseudobulk rather than cell-level DE.
+If the user asks for clustering, marker review, annotation, trajectory, communication, or condition DE, stop after intake and hand off to dedicated local single-cell skills. Use the handoff docs to preserve:
 
+- object path and format.
+- raw-count assay/layer availability.
+- sample/donor/case fields.
+- author labels and reductions.
+- suggested biological replication unit.
+
+Condition DE must use sample/donor-level pseudobulk when raw counts and biological replicates are available. Cell-level tests are not valid biological replication.

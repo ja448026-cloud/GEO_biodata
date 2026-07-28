@@ -1,0 +1,4 @@
+interface:
+  display_name: "GEO_biodata Bulk"
+  short_description: "Run validated bulk or microarray analysis"
+  default_prompt: "Use $geo-biodata-bulk with a validated GEO_biodata manifest to run the correct bulk or microarray driver and write QC, DE, and output-integrity files."

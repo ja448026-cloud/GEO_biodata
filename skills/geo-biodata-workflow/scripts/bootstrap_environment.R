@@ -57,11 +57,21 @@ collect_profile <- function(name, seen = character()) {
   list(cran = cran, bioc = bioc)
 }
 deps <- collect_profile(profile_name)
+make_dep_rows <- function(source, packages) {
+  if (length(packages) == 0L) {
+    return(data.frame(profile = character(), source = character(), package = character()))
+  }
+  data.frame(
+    profile = rep(profile_name, length(packages)),
+    source = rep(source, length(packages)),
+    package = packages,
+    stringsAsFactors = FALSE
+  )
+}
 dep_table <- rbind(
-  data.frame(profile = profile_name, source = "cran", package = deps$cran, stringsAsFactors = FALSE),
-  data.frame(profile = profile_name, source = "bioc", package = deps$bioc, stringsAsFactors = FALSE)
+  make_dep_rows("cran", deps$cran),
+  make_dep_rows("bioc", deps$bioc)
 )
-if (nrow(dep_table) == 0L) dep_table <- data.frame(profile = profile_name, source = character(), package = character())
 dep_table$installed <- vapply(dep_table$package, requireNamespace, logical(1), quietly = TRUE)
 dep_table$version <- vapply(dep_table$package, function(pkg) {
   if (!requireNamespace(pkg, quietly = TRUE)) return("")
