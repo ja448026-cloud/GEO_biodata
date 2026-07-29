@@ -8,9 +8,9 @@ It is not a full R package, not a product framework, and not a replacement for e
 
 ## Current Release
 
-Current public release: `v1.0.0`.
+Current public release: `v1.0.1`.
 
-This release is fixed to the real-run hotfix line that adds resumable reviewed downloads, sample-level quantification table merging, sample-quant route review, and optional `--analysis-id` output isolation. `scale_decision.tsv` and a DE table summarizer are intentionally deferred to avoid adding a new contract or convenience layer before another real-run need.
+This release is fixed to the real-run hotfix line that adds resumable reviewed downloads, sample-level quantification table merging, sample-quant route review, optional `--analysis-id` output isolation, and read-only 10x MTX scRNA bundle inventory. `scale_decision.tsv` and a DE table summarizer are intentionally deferred to avoid adding a new contract or convenience layer before another real-run need.
 
 ## Choose The Narrow Skill
 
@@ -147,6 +147,17 @@ Preranked GSEA writes an ID-overlap gate table and stops when the rank-table IDs
 Use `geo-biodata-scrna` for object inventory only. If reclustering, marker review, annotation, or condition DE is needed, use dedicated local single-cell tools. Cluster markers are descriptive; condition DE in scRNA should use sample/donor-level pseudobulk.
 
 Use `geo-biodata-figure` after source tables, DE/rank tables, route-driver diagnostics, or inspected objects exist. It is an independent omics visualization playbook, not an external skill router and not a statistical executor. Agents may use currently available R, Python, or user-specified plotting tools, but figures must stay source-linked and must not change upstream statistics.
+
+## Example Outputs
+
+These images are static examples from local real-run checks. They demonstrate the output style and provenance boundaries; they are not packaged benchmark datasets or standalone biological claims.
+
+| Example | Preview | Source |
+|---|---|---|
+| GSE270679 exploratory Edge-vs-Core volcano | ![GSE270679 volcano](docs/examples/gse270679/display_volcano_Edge_vs_Core.png) | [PDF](docs/examples/gse270679/display_volcano_Edge_vs_Core.pdf) |
+| GSE270679 top-ranked heatmap | ![GSE270679 heatmap](docs/examples/gse270679/display_top25_heatmap_Edge_vs_Core.png) | [PDF](docs/examples/gse270679/display_top25_heatmap_Edge_vs_Core.pdf) |
+| GSE184198 preliminary scRNA clusters | ![GSE184198 UMAP](docs/examples/gse184198/umap_clusters_res_0_4.png) | scRNA MTX real-run preview |
+| GSE184198 preliminary QC distribution | ![GSE184198 QC violin](docs/examples/gse184198/qc_nFeature_violin.png) | scRNA QC preview |
 
 ## Dependency Profiles
 
