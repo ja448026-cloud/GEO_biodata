@@ -1,10 +1,5 @@
 # Agent operating contract
 
-> FREEZE NOTICE (2026-07-29): No new gates, contracts, YAMLs, schemas,
-> decision rules, or smoke-check assertions until Slim-Down Phases 1-5
-> are complete. Only deletions/consolidations are allowed.
-> smoke checks size cap: 34,459 bytes.
-
 This repository is a reusable GEO biodata workflow for coding agents (Claude Code, Codex, etc.). Read `skills/geo-biodata-workflow/SKILL.md` before working on any GEO accession.
 
 ## For Claude Code
