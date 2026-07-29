@@ -143,15 +143,11 @@ download_with_curl <- function(url, dest) {
 }
 
 download_with_download_file <- function(url, dest) {
-  last_error <- ""
   for (attempt in seq_len(download_retries)) {
     if (file.exists(dest)) unlink(dest)
     status <- tryCatch(
       utils::download.file(url, destfile = dest, mode = "wb", quiet = FALSE),
-      error = function(e) {
-        last_error <<- conditionMessage(e)
-        1L
-      }
+      error = function(e) 1L
     )
     if (identical(status, 0L) && file.exists(dest) && file.info(dest)$size > 0L) {
       return(TRUE)
@@ -163,7 +159,6 @@ download_with_download_file <- function(url, dest) {
     }
   }
   if (file.exists(dest)) unlink(dest)
-  attr(FALSE, "last_error") <- last_error
   FALSE
 }
 
@@ -181,12 +176,50 @@ download_one <- function(url, dest, accession = NA_character_) {
     )
     if (isTRUE(ok) && download_ok(dest)) {
       message("Download OK via ", method, ": ", basename(dest))
-      return(list(path = dest, method = method))
+      return(data.frame(
+        ok = TRUE,
+        method = method,
+        path = dest,
+        bytes = file.info(dest)$size,
+        sha256 = digest::digest(dest, algo = "sha256", file = TRUE, serialize = FALSE),
+        error_message = "",
+        stringsAsFactors = FALSE
+      ))
     }
     errors <- c(errors, method)
   }
   if (file.exists(dest)) unlink(dest)
-  stop("All download methods failed for ", url, ". Tried: ", paste(errors, collapse = ", "), call. = FALSE)
+  data.frame(
+    ok = FALSE,
+    method = "",
+    path = dest,
+    bytes = NA_real_,
+    sha256 = "",
+    error_message = paste("All download methods failed. Tried:", paste(errors, collapse = ", ")),
+    stringsAsFactors = FALSE
+  )
+}
+
+manifest_row <- function(accession, file_name, url, result) {
+  data.frame(
+    accession = accession,
+    file = basename(file_name),
+    supplement_url = url,
+    path = result$path[[1L]],
+    bytes = result$bytes[[1L]],
+    method = result$method[[1L]],
+    download_method = result$method[[1L]],
+    sha256 = result$sha256[[1L]],
+    status = if (isTRUE(result$ok[[1L]])) "ok" else "failed",
+    error_message = result$error_message[[1L]],
+    downloaded_at_utc = format(Sys.time(), tz = "UTC", usetz = TRUE),
+    stringsAsFactors = FALSE
+  )
+}
+
+append_manifest <- function(row, manifest_path) {
+  utils::write.table(row, manifest_path, sep = "\t", quote = FALSE,
+    row.names = FALSE, col.names = !file.exists(manifest_path), append = file.exists(manifest_path), na = "")
 }
 
 if (length(args) == 2L) {
@@ -237,8 +270,9 @@ if (length(args) == 2L) {
   }
 
   if (!dir.exists(raw_dir)) dir.create(raw_dir, recursive = TRUE)
-  paths <- character(nrow(selected))
-  methods_used <- character(nrow(selected))
+  manifest_path <- file.path(raw_dir, "download_manifest.tsv")
+  if (file.exists(manifest_path)) unlink(manifest_path)
+  failed_rows <- list()
   for (i in seq_len(nrow(selected))) {
     dest <- file.path(raw_dir, basename(selected$file_name[[i]]))
     source_i <- if ("source_accession" %in% names(selected)) as.character(selected$source_accession[[i]]) else ""
@@ -253,10 +287,22 @@ if (length(args) == 2L) {
       dest,
       accession = accession_i
     )
-    paths[[i]] <- downloaded$path
-    methods_used[[i]] <- downloaded$method
+    row <- manifest_row(selected$accession[[i]], selected$file_name[[i]], selected$supplement_url[[i]], downloaded)
+    append_manifest(row, manifest_path)
+    if (!isTRUE(downloaded$ok[[1L]])) failed_rows[[length(failed_rows) + 1L]] <- row
   }
-  accession <- selected$accession
+  if (length(failed_rows) > 0L) {
+    retry_plan <- do.call(rbind, failed_rows)
+    retry_plan <- retry_plan[, c("accession", "file", "supplement_url", "error_message"), drop = FALSE]
+    utils::write.table(retry_plan, file.path(dirname(raw_dir), "plans", "download_retry_plan.tsv"),
+      sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+    cat("DOWNLOAD_INCOMPLETE\n")
+    cat(normalizePath(manifest_path, winslash = "/", mustWork = TRUE), "\n")
+    quit(status = 1L)
+  }
+  cat("DOWNLOAD_COMPLETE\n")
+  cat(normalizePath(manifest_path, winslash = "/", mustWork = TRUE), "\n")
+  quit(status = 0L)
 } else {
   accession <- toupper(args[[1L]])
   raw_dir <- args[[2L]]
@@ -298,7 +344,10 @@ info <- file.info(paths)
 manifest <- data.frame(
   accession = accession,
   file = basename(paths),
+  supplement_url = "",
+  path = paths,
   bytes = info$size,
+  method = methods_used,
   download_method = methods_used,
   sha256 = vapply(
     paths,
