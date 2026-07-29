@@ -1,11 +1,12 @@
 #!/usr/bin/env Rscript
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) != 1L) {
-  stop("Usage: validate_manifest.R /path/to/run_manifest.yaml", call. = FALSE)
+if (!length(args) %in% c(1L, 3L) || (length(args) == 3L && args[[2L]] != "--status-dir")) {
+  stop("Usage: validate_manifest.R /path/to/run_manifest.yaml [--status-dir DIR]", call. = FALSE)
 }
 
 manifest_path <- args[[1L]]
+status_dir_arg <- if (length(args) == 3L) args[[3L]] else ""
 if (!file.exists(manifest_path)) stop("Manifest file does not exist: ", manifest_path, call. = FALSE)
 if (!requireNamespace("yaml", quietly = TRUE)) stop("Missing required package: yaml", call. = FALSE)
 
@@ -31,6 +32,11 @@ script_dir <- if (length(file_arg) > 0L) dirname(normalizePath(sub("^--file=", "
 manifest_dir <- dirname(normalizePath(manifest_path, winslash = "/", mustWork = TRUE))
 schema_path <- find_repo_file(c(getwd(), manifest_dir, script_dir), file.path("schemas", "run_manifest.schema.yaml"))
 if (is.na(schema_path)) stop("Could not find schemas/run_manifest.schema.yaml.", call. = FALSE)
+resolve_output_dir <- function(path) {
+  if (!nzchar(path %||% "")) return(manifest_dir)
+  if (grepl("^[A-Za-z]:[\\\\/]|^/", path)) return(path)
+  file.path(manifest_dir, path)
+}
 
 manifest <- yaml::read_yaml(manifest_path)
 schema <- yaml::read_yaml(schema_path)
@@ -424,7 +430,8 @@ if (identical(manifest$review$mode %||% "", "agent_adjudicated")) {
   }
 }
 
-out_dir <- dirname(manifest_path)
+out_dir <- resolve_output_dir(status_dir_arg)
+if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 status <- if (length(errors) == 0L) "MANIFEST_VALIDATED" else "MANIFEST_INVALID"
 validation <- data.frame(
   status = c(rep("ERROR", length(errors)), rep("WARNING", length(warnings))),

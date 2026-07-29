@@ -6,11 +6,15 @@
 # Enforces input scale contract.
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) != 1L) {
-  stop("Usage: run_bulk_normalized.R /path/to/run_manifest.yaml", call. = FALSE)
+if (!length(args) %in% c(1L, 3L) || (length(args) == 3L && args[[2L]] != "--analysis-id")) {
+  stop("Usage: run_bulk_normalized.R /path/to/run_manifest.yaml [--analysis-id NAME]", call. = FALSE)
 }
 
 manifest_path <- args[[1L]]
+analysis_id <- if (length(args) == 3L) args[[3L]] else "main"
+if (!grepl("^[A-Za-z0-9_.-]+$", analysis_id)) {
+  stop("analysis-id may contain only letters, numbers, dot, underscore, and dash.", call. = FALSE)
+}
 if (!file.exists(manifest_path)) stop("Manifest file does not exist: ", manifest_path, call. = FALSE)
 
 required <- c("yaml", "ggplot2")
@@ -31,6 +35,13 @@ script_path <- if (length(file_arg) > 0L) {
 driver_dir <- dirname(script_path)
 script_dir <- normalizePath(file.path(driver_dir, ".."), winslash = "/", mustWork = TRUE)
 manifest_dir <- dirname(normalizePath(manifest_path, winslash = "/", mustWork = TRUE))
+tables_dir <- if (analysis_id == "main") file.path(manifest_dir, "tables") else file.path(manifest_dir, "tables", analysis_id)
+figures_dir <- if (analysis_id == "main") file.path(manifest_dir, "figures") else file.path(manifest_dir, "figures", analysis_id)
+logs_dir <- if (analysis_id == "main") file.path(manifest_dir, "logs") else file.path(manifest_dir, "logs", analysis_id)
+for (path in c(tables_dir, figures_dir, logs_dir)) {
+  if (!dir.exists(path)) dir.create(path, recursive = TRUE, showWarnings = FALSE)
+}
+workflow_status_path <- if (analysis_id == "main") file.path(manifest_dir, "workflow_status.tsv") else file.path(logs_dir, "workflow_status.tsv")
 
 # Source shared functions
 limma_common <- file.path(script_dir, "bulk_limma_common.R")
@@ -40,8 +51,9 @@ source(limma_common)
 # Validate manifest
 validator <- file.path(script_dir, "validate_manifest.R")
 if (!file.exists(validator)) stop("Could not find validate_manifest.R.", call. = FALSE)
-validation_output <- system2("Rscript", c(shQuote(validator), shQuote(manifest_path)),
-  stdout = TRUE, stderr = TRUE)
+validation_args <- c(shQuote(validator), shQuote(manifest_path))
+if (analysis_id != "main") validation_args <- c(validation_args, "--status-dir", shQuote(logs_dir))
+validation_output <- system2("Rscript", validation_args, stdout = TRUE, stderr = TRUE)
 validation_status <- attr(validation_output, "status") %||% 0L
 if (!identical(as.integer(validation_status), 0L)) {
   cat(paste(validation_output, collapse = "\n"), "\n")
@@ -74,13 +86,6 @@ group_col <- manifest$sample_mapping$group_column
 # Scale contract
 scale_config <- manifest$input$scale %||% list(transformed = FALSE, transform = "", evidence_source = "")
 analysis_intent <- manifest$analysis$intent %||% "differential_expression"
-
-tables_dir <- file.path(manifest_dir, "tables")
-figures_dir <- file.path(manifest_dir, "figures")
-logs_dir <- file.path(manifest_dir, "logs")
-for (path in c(tables_dir, figures_dir, logs_dir)) {
-  if (!dir.exists(path)) dir.create(path, recursive = TRUE, showWarnings = FALSE)
-}
 
 fallback_events <- init_fallback_events()
 
@@ -177,7 +182,7 @@ if (identical(analysis_intent, "eda_only")) {
     note = sprintf("EDA-only completed. %d samples, %d features.", ncol(mat_filtered), nrow(mat_filtered)),
     stringsAsFactors = FALSE
   )
-  utils::write.table(status, file.path(manifest_dir, "workflow_status.tsv"),
+  utils::write.table(status, workflow_status_path,
     sep = "\t", quote = FALSE, row.names = FALSE, na = "")
   write_fallback_events(fallback_events, tables_dir)
 
@@ -203,7 +208,7 @@ if (identical(analysis_intent, "differential_expression")) {
       note = paste("DE blocked by scale contract:", paste(scale_check$conditions, collapse = "; ")),
       stringsAsFactors = FALSE
     )
-    utils::write.table(status, file.path(manifest_dir, "workflow_status.tsv"),
+    utils::write.table(status, workflow_status_path,
       sep = "\t", quote = FALSE, row.names = FALSE, na = "")
     write_fallback_events(fallback_events, tables_dir)
     writeLines(c("Scale contract blocks DE:", paste("-", scale_check$conditions)),
@@ -293,7 +298,7 @@ status <- data.frame(
   note = status_out$note,
   stringsAsFactors = FALSE
 )
-utils::write.table(status, file.path(manifest_dir, "workflow_status.tsv"),
+utils::write.table(status, workflow_status_path,
   sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
 session_lines <- utils::capture.output(utils::sessionInfo())
