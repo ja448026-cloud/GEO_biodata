@@ -43,3 +43,7 @@ Verify matrix columns exactly match reviewed sample mapping. Reject negative or 
 Paired or blocked designs must be explicit before analysis: add the blocking factor to sample mapping, include it in `design.formula`, and confirm the contrast factor is estimable after blocking. Stop when pair identifiers are implied but unavailable or the model matrix is not full rank.
 
 Enrichment is downstream. Use `geo-biodata-enrichment` only after a ranked table exists.
+
+EDA-only is a valid endpoint when the matrix is usable but the biological contrast is not. For `bulk_normalized`, produce QC, PCA, expression-distribution, sample-correlation, and source-linked summary outputs when scale and sample mapping support inspection but donor groups, treatment labels, control status, or replication do not support a defensible differential-expression claim. State in the chat and output notes that the run is exploratory and stop before DE rather than inventing a contrast.
+
+Region, spatial-bin, tumor-zone, and paired designs require explicit biological-unit handling. Do not treat mixed labels such as `Core/In-between` or `In-between/Edge` as ordinary independent contrast groups unless the design question justifies them. For paired region comparisons, restrict to donors or patients with complete paired levels, include the donor/patient blocking term in the design, and describe the reduced subset and power limitation in the chat before reporting DE results.

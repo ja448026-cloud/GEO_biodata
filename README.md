@@ -6,6 +6,12 @@ It helps an agent start from a GEO accession, find the right public files, downl
 
 It is not a full R package, not a product framework, and not a replacement for established scRNA/bulk tools. Keep the repo lean: rules belong in the relevant `SKILL.md`, and R helpers exist only where they shorten a real GEO task.
 
+## Current Release
+
+Current public release: `v1.0.0`.
+
+This release is fixed to the real-run hotfix line that adds resumable reviewed downloads, sample-level quantification table merging, sample-quant route review, and optional `--analysis-id` output isolation. `scale_decision.tsv` and a DE table summarizer are intentionally deferred to avoid adding a new contract or convenience layer before another real-run need.
+
 ## Choose The Narrow Skill
 
 Use the smallest skill that matches the current task:
@@ -32,6 +38,17 @@ Rscript core\R\check_environment.R runs\GSE000000\environment.tsv
 Rscript core\R\bootstrap_environment.R --profile intake --check
 Rscript core\R\discover_geo.R GSE000000 runs\GSE000000
 Rscript core\R\generate_dataset_report.R runs\GSE000000
+```
+
+After metadata discovery and reviewed download, report the data source in the chat, not only in files. Include the GEO accession and title, DOI link, PMID/PMCID when available, 2-5 publication or dataset keywords, and one sentence explaining what the downloaded files represent. If DOI or keywords are missing locally, check GEO, NCBI/PubMed, PMC, or the publisher page and say what source was used.
+
+Example chat summary for `GSE270679`:
+
+```text
+GSE270679: A spatially resolved atlas of gastric cancer characterises a lymphocyte aggregated region [bulk RNA-seq].
+Original article DOI: https://doi.org/10.1038/s41467-026-68612-z; PMID: 41593079; PMCID: PMC12948980.
+Keywords: Gastric cancer; Cancer genomics; Gene regulation in immune cells.
+Downloaded inputs: 16 reviewed sample-level bulk RNA-seq quantification tables containing expected_count, TPM, and FPKM columns.
 ```
 
 Review:
