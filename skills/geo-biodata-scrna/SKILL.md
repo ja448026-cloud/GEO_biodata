@@ -18,6 +18,8 @@ Rscript core\R\scrna\inspect_object.R runs\GSE000000\run_manifest.yaml
 
 Supported routes are `scrna_author_object` and `scrna_raw_counts`.
 
+For 10x-style MTX supplements, set `input.file` to the directory containing per-sample `matrix.mtx(.gz)`, `barcodes.tsv(.gz)`, and `features.tsv(.gz)` or `genes.tsv(.gz)` files. The driver performs read-only triplet inventory and raw count-like validation, then writes `tables/scrna_mtx_bundle_inventory.tsv` and `tables/count_layer_verification.tsv`; it does not run QC, clustering, annotation, or DE.
+
 ## Intake Inventory
 
 Before QC or annotation, record object format, matrix orientation, sparse/dense storage, raw-count layer or assay, normalized and scaled layers, cell and feature metadata fields, embeddings, graphs, author labels, cluster labels, sample/donor/capture fields, filtering notes, and conversion history.

@@ -127,8 +127,96 @@ get_seurat_counts_matrix <- function(assay) {
   NULL
 }
 
+read_mtx <- function(path) {
+  if (!requireNamespace("Matrix", quietly = TRUE)) {
+    stop("Matrix package is required to inspect MTX count bundles.", call. = FALSE)
+  }
+  con <- if (grepl("\\.gz$", path, ignore.case = TRUE)) gzfile(path, "rt") else file(path, "rt")
+  on.exit(close(con), add = TRUE)
+  Matrix::readMM(con)
+}
+
+count_lines <- function(path) {
+  con <- if (grepl("\\.gz$", path, ignore.case = TRUE)) gzfile(path, "rt") else file(path, "rt")
+  on.exit(close(con), add = TRUE)
+  n <- 0L
+  repeat {
+    chunk <- readLines(con, n = 10000L, warn = FALSE)
+    if (!length(chunk)) break
+    n <- n + length(chunk)
+  }
+  n
+}
+
+gsm_from_name <- function(path) {
+  hit <- regmatches(basename(path), regexpr("GSM[0-9]+", basename(path), ignore.case = TRUE))
+  if (length(hit) && nzchar(hit)) toupper(hit) else tools::file_path_sans_ext(basename(path))
+}
+
 # ── Seurat RDS path ──────────────────────────────────────────────────────────
-if (ext %in% c("rds")) {
+if (dir.exists(input_path)) {
+  all_files <- list.files(input_path, full.names = TRUE, recursive = FALSE)
+  mtx_files <- all_files[grepl("matrix\\.mtx(\\.gz)?$", basename(all_files), ignore.case = TRUE)]
+  barcode_files <- all_files[grepl("barcodes\\.tsv(\\.gz)?$", basename(all_files), ignore.case = TRUE)]
+  feature_files <- all_files[grepl("(features|genes)\\.tsv(\\.gz)?$", basename(all_files), ignore.case = TRUE)]
+  groups <- sort(unique(vapply(c(mtx_files, barcode_files, feature_files), gsm_from_name, character(1))))
+  if (!length(groups)) stop("No 10x-style MTX triplets found in directory: ", input_path, call. = FALSE)
+
+  bundle_rows <- do.call(rbind, lapply(groups, function(gsm) {
+    pick <- function(paths, pattern) {
+      hits <- paths[vapply(paths, gsm_from_name, character(1)) == gsm & grepl(pattern, basename(paths), ignore.case = TRUE)]
+      if (length(hits)) hits[[1L]] else ""
+    }
+    mtx <- pick(mtx_files, "matrix\\.mtx")
+    barcodes <- pick(barcode_files, "barcodes\\.tsv")
+    features <- pick(feature_files, "(features|genes)\\.tsv")
+    if (!nzchar(mtx) || !nzchar(barcodes) || !nzchar(features)) {
+      return(data.frame(sample_id = gsm, mtx = mtx, barcodes = barcodes, features = features,
+        n_features = NA_integer_, n_barcodes = NA_integer_, nnz = NA_integer_,
+        integer_fraction_nonzero = NA_real_, nonnegative_fraction_nonzero = NA_real_,
+        status = "INCOMPLETE_TRIPLET", stringsAsFactors = FALSE))
+    }
+    mat <- read_mtx(mtx)
+    vals <- as.numeric(mat@x)
+    if (length(vals) > 100000L) vals <- sample(vals, 100000L)
+    integer_fraction <- if (length(vals)) mean(abs(vals - round(vals)) < 1e-8) else NA_real_
+    nonnegative_fraction <- if (length(vals)) mean(vals >= -1e-8) else NA_real_
+    data.frame(sample_id = gsm, mtx = basename(mtx), barcodes = basename(barcodes), features = basename(features),
+      n_features = nrow(mat), n_barcodes = ncol(mat), nnz = Matrix::nnzero(mat),
+      integer_fraction_nonzero = round(integer_fraction, 4),
+      nonnegative_fraction_nonzero = round(nonnegative_fraction, 4),
+      status = if (isTRUE(integer_fraction > 0.99) && isTRUE(nonnegative_fraction > 0.99) &&
+        count_lines(barcodes) == ncol(mat) && count_lines(features) == nrow(mat)) "PASS_RAW_COUNT_LIKE" else "REVIEW_REQUIRED",
+      stringsAsFactors = FALSE)
+  }))
+  utils::write.table(bundle_rows, file.path(tables_dir, "scrna_mtx_bundle_inventory.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+  utils::write.table(data.frame(
+    candidate = "10x_mtx_bundle",
+    verified = all(bundle_rows$status == "PASS_RAW_COUNT_LIKE"),
+    storage = "sparse",
+    sampled_values = NA_integer_,
+    sampled_integer_fraction = min(bundle_rows$integer_fraction_nonzero, na.rm = TRUE),
+    nonnegative_fraction = min(bundle_rows$nonnegative_fraction_nonzero, na.rm = TRUE),
+    stringsAsFactors = FALSE
+  ), file.path(tables_dir, "count_layer_verification.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+
+  inventory$object_format <- "MTX_10X_bundle"
+  inventory$matrix_orientation <- "genes_x_cells"
+  inventory$n_cells <- sum(bundle_rows$n_barcodes, na.rm = TRUE)
+  inventory$n_features <- if (length(unique(bundle_rows$n_features)) == 1L) bundle_rows$n_features[[1L]] else paste(unique(bundle_rows$n_features), collapse = ";")
+  inventory$sparse_storage <- "sparse"
+  inventory$count_layer_candidate <- "matrix.mtx per sample"
+  inventory$count_layer_verified <- all(bundle_rows$status == "PASS_RAW_COUNT_LIKE")
+  inventory$verification_method <- "mtx_triplet_dimensions_and_nonzero_values"
+  inventory$sampled_integer_fraction <- min(bundle_rows$integer_fraction_nonzero, na.rm = TRUE)
+  inventory$nonnegative_fraction <- min(bundle_rows$nonnegative_fraction_nonzero, na.rm = TRUE)
+  inventory$route_recommendation <- if (inventory$count_layer_verified) "scrna_raw_counts" else "review_required"
+  inventory$donor_field_candidates <- "sample_id_from_filename"
+  inventory$conversion_history <- "direct_mtx_bundle_inventory"
+
+} else if (ext %in% c("rds")) {
   if (!requireNamespace("SeuratObject", quietly = TRUE)) {
     stop("SeuratObject package is required to read RDS. Install with: install.packages('SeuratObject')", call. = FALSE)
   }
@@ -588,6 +676,9 @@ has_donor <- nzchar(inventory$donor_field_candidates %||% "")
 if (inventory$object_format %||% "" == "" || identical(inventory$n_cells, 0L)) {
   obj_state <- "OBJECT_INTAKE_BLOCKED"
   obj_note <- "Could not read object or determine format."
+} else if (identical(inventory$object_format %||% "", "MTX_10X_bundle") && counts_verified) {
+  obj_state <- "OBJECT_INVENTORY_COMPLETE"
+  obj_note <- sprintf("MTX bundle inventory complete. %s cells across verified raw count-like sample matrices; labels are not expected at intake.", inventory$n_cells)
 } else if (has_counts && counts_verified && has_labels) {
   obj_state <- "OBJECT_INVENTORY_COMPLETE"
   obj_note <- sprintf("Object inventory complete. Format: %s, %s cells. Counts verified, labels found.",
