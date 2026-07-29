@@ -10,8 +10,7 @@ integrated_method_sources:
       - cells are not biological replicates for condition DE
       - integration/batch-corrected embeddings are not inputs for DE
     implemented_as:
-      - knowledge/decision_rules/scrna_post_count_qc.yaml
-      - knowledge/decision_rules/pseudobulk_requirement.yaml
+      - skills/geo-biodata-scrna/SKILL.md
   ngs_bulk_rnaseq:
     borrowed_patterns:
       - separate raw FASTQ/count-generation handoff from count-matrix DE
@@ -34,7 +33,7 @@ integrated_method_sources:
       - route matrix or object inputs to post-count QC rather than raw alignment
     implemented_as:
       - routes scrna_raw_counts and scrna_author_object
-      - knowledge/decision_rules/scrna_post_count_qc.yaml
+      - skills/geo-biodata-scrna/SKILL.md
   bio_single_cell_data_io:
     borrowed_patterns:
       - preserve raw counts and original objects
@@ -42,29 +41,28 @@ integrated_method_sources:
       - avoid dense materialization and lossy object conversion
       - inventory h5ad/RDS layers and metadata before analysis
     implemented_as:
-      - knowledge/decision_rules/scrna_object_intake.yaml
+      - skills/geo-biodata-scrna/SKILL.md
   bio_single_cell_preprocessing:
     borrowed_patterns:
       - choose QC thresholds from distributions, not fixed universal cutoffs
       - run QC/doublet/ambient steps per sample or capture where possible
       - do not reflexively regress mitochondrial fraction, total counts, or cell cycle
     implemented_as:
-      - knowledge/decision_rules/scrna_post_count_qc.yaml
+      - skills/geo-biodata-scrna/SKILL.md
   bio_single_cell_clustering:
     borrowed_patterns:
       - sweep clustering resolution and validate clusters by markers/stability
       - UMAP is visualization, not a metric analysis space
       - cluster marker p-values are descriptive after clustering
     implemented_as:
-      - knowledge/decision_rules/scrna_post_count_qc.yaml
+      - skills/geo-biodata-scrna/SKILL.md
   bio_single_cell_markers_annotation:
     borrowed_patterns:
       - marker detection is annotation/ranking, not condition-level inference
       - preserve uncertainty and avoid overlabeling
       - use pseudobulk raw counts for condition DE
     implemented_as:
-      - knowledge/decision_rules/pseudobulk_requirement.yaml
-      - knowledge/decision_rules/scrna_post_count_qc.yaml
+      - skills/geo-biodata-scrna/SKILL.md
   public_visualization_guidance:
     borrowed_patterns:
       - start figures from a single scientific question and explicit data unit

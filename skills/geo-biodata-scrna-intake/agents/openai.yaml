@@ -1,5 +1,0 @@
-interface:
-  display_name: "GEO_biodata scRNA Intake"
-  short_description: "Inspect scRNA objects without reclustering"
-  default_prompt: "Use $geo-biodata-scrna-intake to inspect a GEO scRNA object, preserve author labels, and report assays, layers, metadata, and raw-count availability."
-

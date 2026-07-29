@@ -16,7 +16,7 @@ Use the smallest skill that matches the current task:
 | GEO metadata, DOI/PMID/PMCID, publication supplements, file inventory, reviewed download, file-level QC, manifest draft | `geo-biodata-intake` |
 | Bulk raw-count, bulk-normalized, or microarray DE/QC from a validated manifest | `geo-biodata-bulk` |
 | Preranked GSEA from an existing DE/rank table and local GMT file | `geo-biodata-enrichment` |
-| Read-only scRNA object inventory for Seurat/H5AD/RDS/MTX | `geo-biodata-scrna-intake` |
+| Read-only scRNA object inventory for Seurat/H5AD/RDS/MTX | `geo-biodata-scrna` |
 | Independent source-table-linked figure planning, generation guidance, and QA | `geo-biodata-figure` |
 | Legacy prompts naming the old entry point | `geo-biodata-workflow` |
 
@@ -127,7 +127,7 @@ Use `geo-biodata-enrichment` only after a DE, mapped gene list, or ranked table 
 
 Preranked GSEA writes an ID-overlap gate table and stops when the rank-table IDs do not overlap the GMT ID space enough to support interpretation.
 
-Use `geo-biodata-scrna-intake` for object inventory only. If reclustering, marker review, annotation, or condition DE is needed, use the handoff notes in `docs/handoffs/` with dedicated local single-cell skills. Cluster markers are descriptive; condition DE in scRNA should use sample/donor-level pseudobulk.
+Use `geo-biodata-scrna` for object inventory only. If reclustering, marker review, annotation, or condition DE is needed, use dedicated local single-cell tools. Cluster markers are descriptive; condition DE in scRNA should use sample/donor-level pseudobulk.
 
 Use `geo-biodata-figure` after source tables, DE/rank tables, route-driver diagnostics, or inspected objects exist. It is an independent omics visualization playbook, not an external skill router and not a statistical executor. Agents may use currently available R, Python, or user-specified plotting tools, but figures must stay source-linked and must not change upstream statistics.
 

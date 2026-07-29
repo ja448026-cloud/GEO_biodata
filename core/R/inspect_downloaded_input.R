@@ -169,7 +169,7 @@ state <- if (is.null(selected)) "BLOCKED_INPUT" else "REVIEW_REQUIRED"
 next_module <- if (is.null(selected)) "none" else if (selected$route_candidate %in% c("bulk_raw_counts", "bulk_normalized")) {
   "geo-biodata-bulk"
 } else if (selected$route_candidate == "scrna_author_object") {
-  "geo-biodata-scrna-intake"
+  "geo-biodata-scrna"
 } else {
   "review_required"
 }

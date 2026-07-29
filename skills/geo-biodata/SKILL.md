@@ -14,7 +14,7 @@ Use this as the default entry point. This project is a skill library plus small 
 | GEO metadata, DOI/PMID/PMCID, open supplements, reviewed download, file audit, manifest draft | `geo-biodata-intake` | `core/R/*intake*`, `core/R/download_reviewed_files.R` |
 | Bulk raw-count, normalized, or microarray DE/QC | `geo-biodata-bulk` | `core/R/drivers/run_bulk_*.R`, `core/R/drivers/run_microarray.R` |
 | Preranked GSEA from an existing DE/rank table and GMT | `geo-biodata-enrichment` | `core/R/enrichment/run_preranked_gsea.R` |
-| Seurat/H5AD/RDS object inventory without reclustering | `geo-biodata-scrna-intake` | `core/R/scrna/inspect_object.R` |
+| Seurat/H5AD/RDS object inventory without reclustering | `geo-biodata-scrna` | `core/R/scrna/inspect_object.R` |
 | Single-purpose plot planning, source linkage, figure generation guidance, and QA | `geo-biodata-figure` | independent playbook; agent-authored R/Python plotting from source-linked outputs |
 
 ## Defaults
@@ -25,4 +25,4 @@ Do not run statistical analysis from filenames alone. Preserve raw downloads unc
 
 Keep DOI/PMID/PMCID lookup in intake as context enrichment. It can improve supplement discovery and reporting, but missing DOI metadata should not block GEO file inventory or reviewed downloads.
 
-For scRNA clustering, marker annotation, cell communication, trajectory, or condition DE, use mature single-cell tools/skills after `geo-biodata-scrna-intake` confirms object content and metadata.
+For scRNA clustering, marker annotation, cell communication, trajectory, or condition DE, use mature single-cell tools/skills after `geo-biodata-scrna` confirms object content and metadata.

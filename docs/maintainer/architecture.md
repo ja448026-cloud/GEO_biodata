@@ -6,7 +6,7 @@ The public skill surface is intentionally small:
 - `geo-biodata-intake`
 - `geo-biodata-bulk`
 - `geo-biodata-enrichment`
-- `geo-biodata-scrna-intake`
+- `geo-biodata-scrna`
 - `geo-biodata-figure`
 - `geo-biodata-workflow` as a deprecated compatibility alias
 

@@ -656,7 +656,7 @@ cat("== scRNA intake optional check ==\n")
 if (quick_mode) {
   cat("SKIP\tscRNA intake optional check skipped in quick mode.\n")
 } else if (all(vapply(c("SeuratObject", "Matrix"), requireNamespace, logical(1), quietly = TRUE))) {
-  scrna_dir <- file.path(scratch, "scrna_object_intake")
+  scrna_dir <- file.path(scratch, "scrna_intake")
   dir.create(file.path(scrna_dir, "raw"), recursive = TRUE, showWarnings = FALSE)
   suppressPackageStartupMessages({
     library(Matrix)

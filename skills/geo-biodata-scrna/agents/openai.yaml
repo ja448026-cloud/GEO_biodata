@@ -1,0 +1,4 @@
+interface:
+  display_name: "GEO_biodata scRNA"
+  short_description: "Inspect scRNA objects and plan conservative handoffs"
+  default_prompt: "Use $geo-biodata-scrna to inspect a GEO scRNA object, preserve author labels, report assays, layers, metadata, raw-count availability, and pseudobulk readiness."

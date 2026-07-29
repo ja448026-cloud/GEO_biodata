@@ -4,7 +4,7 @@ description: >
   Legacy-compatible GEO_biodata entry point. Use for existing prompts that name
   geo-biodata-workflow; otherwise prefer the slimmer current modules:
   geo-biodata, geo-biodata-intake, geo-biodata-bulk, geo-biodata-enrichment,
-  geo-biodata-scrna-intake, or geo-biodata-figure.
+  geo-biodata-scrna, or geo-biodata-figure.
 ---
 
 # GEO_biodata Workflow
@@ -20,7 +20,7 @@ This compatibility skill keeps the original script bundle available. For new wor
 | GEO metadata, DOI/PMID/PMCID, publication supplements, download plan, reviewed download, file-level QC, manifest draft | `geo-biodata-intake` |
 | bulk raw-count, bulk normalized, or microarray DE/QC from a validated manifest | `geo-biodata-bulk` |
 | preranked GSEA from an existing rank table and local GMT file | `geo-biodata-enrichment` |
-| Seurat/H5AD/RDS/MTX object inventory without reclustering | `geo-biodata-scrna-intake` |
+| Seurat/H5AD/RDS/MTX object inventory without reclustering | `geo-biodata-scrna` |
 | figure planning, plot source linkage, and QA guidance | `geo-biodata-figure` |
 
 ## Shared Script Bundle
