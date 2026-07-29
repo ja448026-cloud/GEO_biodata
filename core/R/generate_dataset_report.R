@@ -36,6 +36,21 @@ read_if <- function(path) {
   if (file.exists(path)) utils::read.delim(path, stringsAsFactors = FALSE, check.names = FALSE) else NULL
 }
 
+has_quant_headers <- function(run_dir) {
+  raw_dir <- file.path(run_dir, "raw")
+  if (!dir.exists(raw_dir)) return(FALSE)
+  paths <- list.files(raw_dir, pattern = "\\.(txt|tsv|csv)(\\.gz)?$", full.names = TRUE, ignore.case = TRUE)
+  if (!length(paths)) return(FALSE)
+  for (path in head(sort(paths), 5L)) {
+    tab <- tryCatch(utils::read.delim(path, nrows = 5L, stringsAsFactors = FALSE, check.names = FALSE),
+      error = function(e) NULL)
+    if (is.null(tab)) next
+    cols <- tolower(names(tab))
+    if (any(cols %in% c("expected_count", "tpm", "fpkm"))) return(TRUE)
+  }
+  FALSE
+}
+
 meta   <- read_if(meta_path)
 pub    <- read_if(pub_path)
 route  <- read_if(route_path)
@@ -43,6 +58,12 @@ supp   <- read_if(supp_path)
 samp   <- read_if(samp_path)
 
 accession <- if (!is.null(route) && "accession" %in% names(route)) route$accession[[1L]] else basename(run_dir)
+route_recommendation <- if (!is.null(route)) route$recommended_route[[1L]] %||% "unknown" else "unknown"
+review_required <- if (!is.null(route)) isTRUE(route$review_required[[1L]]) else FALSE
+if (has_quant_headers(run_dir) && identical(route_recommendation, "metadata_only")) {
+  route_recommendation <- "bulk_quant_review_required"
+  review_required <- TRUE
+}
 
 # Helper: extract a metadata field value
 meta_val <- function(field_name) {
@@ -152,7 +173,7 @@ if (!is.null(samp)) {
 if (!is.null(route)) {
   lines <- c(lines,
     paste("| **Assay Type** |", route$assay_type[[1L]] %||% "unknown", "|"),
-    paste("| **Recommended Route** |", route$recommended_route[[1L]] %||% "unknown", "|")
+    paste("| **Recommended Route** |", route_recommendation, "|")
   )
 }
 if (!is.null(supp) && nrow(supp) > 0L && "file_name" %in% names(supp)) {
@@ -216,9 +237,9 @@ if (!is.null(supp) && nrow(supp) > 0L && "file_name" %in% names(supp)) {
 if (!is.null(route)) {
   lines <- c(lines,
     "",
-    paste("**Route recommendation**: `", route$recommended_route[[1L]] %||% "unknown", "`"),
+    paste("**Route recommendation**: `", route_recommendation, "`"),
     paste("  - Assay type:", route$assay_type[[1L]] %||% "unknown"),
-    paste("  - Review required:", if (isTRUE(route$review_required[[1L]])) "yes" else "no")
+    paste("  - Review required:", if (isTRUE(review_required)) "yes" else "no")
   )
 }
 
