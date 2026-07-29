@@ -24,6 +24,7 @@ This module turns a GEO accession into a reviewed resource inventory and a file-
 - Choose the analysis unit for GEO SuperSeries/SubSeries before download and analysis; prefer the SubSeries matching the assay and biological question, and do not merge incompatible assays or sample definitions.
 - Use `generate_dataset_report.R` for DOI/PMCID/abstract enrichment and a human-readable dataset summary. DOI lookup is helpful context, not a blocker.
 - After discovery and reviewed download, summarize the data source in the user-facing chat. Include accession, dataset title, DOI link, PMID/PMCID when available, 2-5 keywords or topic labels from GEO/NCBI/PubMed/PMC/publisher metadata, and one sentence describing the downloaded files. For example: `GSE270679`; DOI `https://doi.org/10.1038/s41467-026-68612-z`; keywords `Gastric cancer`, `Cancer genomics`, `Gene regulation in immune cells`; 16 sample-level bulk RNA-seq quantification tables with `expected_count`, `TPM`, and `FPKM`.
+- If the requested source is TCGA rather than GEO supplements, use the Bioconductor R package `TCGAbiolinks` for GDC query, download, and preparation. Record the TCGA project, data category, data type, workflow type, sample filters, and GDC release context before handing off to analysis.
 - Download only rows that were selected and reviewed in `plans/download_plan.tsv`.
 - Use the default download order: GEOquery, then aria2c, then curl, then `utils::download.file`.
 - Preserve downloaded files unchanged; inspect and analyze derived copies.
