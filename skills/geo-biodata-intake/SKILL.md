@@ -21,11 +21,14 @@ This module turns a GEO accession into a reviewed resource inventory and a file-
 ## Rules
 
 - Use `discover_geo.R` first; it records series-level and sample-level supplements when GEO exposes both.
+- Choose the analysis unit for GEO SuperSeries/SubSeries before download and analysis; prefer the SubSeries matching the assay and biological question, and do not merge incompatible assays or sample definitions.
 - Use `generate_dataset_report.R` for DOI/PMCID/abstract enrichment and a human-readable dataset summary. DOI lookup is helpful context, not a blocker.
 - Download only rows that were selected and reviewed in `plans/download_plan.tsv`.
 - Use the default download order: GEOquery, then aria2c, then curl, then `utils::download.file`.
 - Preserve downloaded files unchanged; inspect and analyze derived copies.
 - Do not confirm scale automatically. The handoff may suggest a route, but analysis still needs manual review flags in `run_manifest.yaml`.
+- Treat raw sequencing accessions as handoff targets, not shortcuts to matrix-level analysis. Before raw processing, require organism, genome or transcriptome reference, sample sheet, library layout, strandedness or an inference plan, and the expected output matrix type.
+- Safe raw-accession actions are recording SRA/BioProject/ENA accessions, writing an nf-core/fetchngs handoff note, and stopping with `RAW_COMPUTE_REQUIRED` when matrix-level inputs are absent. Do not infer strandedness from filenames alone or start DE/clustering from raw accessions before count generation.
 
 ## Outputs
 

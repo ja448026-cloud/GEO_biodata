@@ -65,7 +65,9 @@ write_mapping_audit(attr(pmap, "stats"), pmap, de_results, "mapping_audit.tsv")
 - Use Fisher's exact test for ORA (one-tailed, greater).
 - Define the universe explicitly; do not use the entire genome unless the platform supports it.
 - Fail closed when the universe has fewer than 100 genes or more than 10% of query genes are outside the universe.
+- Document `universe_source`, `n_universe`, `n_query_genes`, `n_query_in_universe`, and the source file path. For preranked GSEA, the ranked list is the tested set and no separate ORA-style universe is required.
 - Deduplicate gene symbols with a documented strategy (default: max_abs_logfc).
+- Record probe-to-symbol mapping statistics: total probes, mapped probes, unique genes, and coverage. Stop when probe-to-gene mapping coverage is below 50%, universe size is undocumented, or the deduplication strategy is unstated.
 - Pathway redundancy is automatically reduced via overlap Jaccard clustering.
 - Record GMT sources, universe size, FDR threshold, and session info.
 

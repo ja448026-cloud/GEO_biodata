@@ -13,9 +13,6 @@ Read only the bulk-relevant references:
 
 - `skills/geo-biodata-workflow/references/basic-bulk.md`
 - `skills/geo-biodata-workflow/references/bulk-de-gsea-rules.md`
-- `knowledge/decision_rules/bulk_input_scale.yaml`
-- `knowledge/decision_rules/paired_design.yaml`
-- `knowledge/decision_rules/biological_replication.yaml`
 - `knowledge/route_maturity.yaml`
 
 ## Executors
@@ -34,5 +31,15 @@ Choose exactly one driver by manifest route:
 - `microarray_series_matrix`: limma with platform/mapping audit.
 
 Do not pass normalized values to raw-count models. For paired designs, model the patient/donor term explicitly.
+
+## Rules
+
+Biological inference uses the donor, patient, animal, or independently prepared sample as the unit, not cells, spots, reads, or technical sections. Record `sample_mapping.biological_unit`, count independent biological units per contrast level, and stop with `BLOCKED_METADATA` or `REVIEW_REQUIRED` when the unit cannot be reconstructed or a contrast level has fewer than two biological units.
+
+Choose the statistical model from verified input scale, not filenames. `bulk_raw_counts` requires a nonnegative integer-like gene-by-sample matrix and uses DESeq2 or edgeR-style count models; `bulk_normalized` requires finite normalized/log expression or abundance and uses limma or exploratory QC; `microarray_series_matrix` requires a platform-reviewed expression matrix or ExpressionSet and uses limma.
+
+Verify matrix columns exactly match reviewed sample mapping. Reject negative or fractional values for raw-count routes. Do not infer raw-count status from names such as count, matrix, expression, or data.
+
+Paired or blocked designs must be explicit before analysis: add the blocking factor to sample mapping, include it in `design.formula`, and confirm the contrast factor is estimable after blocking. Stop when pair identifiers are implied but unavailable or the model matrix is not full rank.
 
 Enrichment is downstream. Use `geo-biodata-enrichment` only after a ranked table exists.

@@ -17,7 +17,6 @@ integrated_method_sources:
       - require organism/reference/sample sheet metadata before raw processing
     implemented_as:
       - route raw_fastq_handoff
-      - knowledge/decision_rules/raw_fastq_handoff.yaml
   ngs_bulk_rnaseq_differential_expression:
     borrowed_patterns:
       - require raw matrix, sample metadata, design formula, contrasts, and biological replication before DE
@@ -25,7 +24,6 @@ integrated_method_sources:
       - keep DE outputs auditable with design and QC tables
     implemented_as:
       - schemas/run_manifest.schema.yaml
-      - knowledge/decision_rules/bulk_input_scale.yaml
       - core/R/drivers/run_bulk_counts.R
   ngs_scrna_seq:
     borrowed_patterns:

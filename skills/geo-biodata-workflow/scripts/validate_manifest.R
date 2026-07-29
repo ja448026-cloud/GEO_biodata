@@ -414,24 +414,11 @@ if (identical(manifest$review$mode %||% "", "agent_adjudicated")) {
         }
       }
 
-      # Decision rule must exist in knowledge/decision_rules/
+      # Decision rule labels remain manifest metadata after rule text moved into SKILL.md files.
       if ("decision_rule" %in% names(decision)) {
         dr <- decision$decision_rule[[1L]] %||% ""
         if (!nzchar(dr) || grepl("^rules_only", dr)) {
           add_error("decision_rule is empty or 'rules_only'.")
-        }
-        # Verify rule exists in decision_rules directory
-        rules_dir <- find_repo_file(c(getwd(), manifest_dir, script_dir), file.path("knowledge", "decision_rules"))
-        if (!is.na(rules_dir)) {
-          rule_files <- list.files(rules_dir, pattern = "\\.yaml$", full.names = TRUE, recursive = TRUE)
-          rule_ids <- character()
-          for (rf in rule_files) {
-            ry <- tryCatch(yaml::read_yaml(rf), error = function(e) NULL)
-            if (!is.null(ry$rule_id)) rule_ids <- c(rule_ids, ry$rule_id)
-          }
-          if (length(rule_ids) > 0L && !dr %in% rule_ids) {
-            add_error("decision_rule '", dr, "' not found in knowledge/decision_rules/.")
-          }
         }
       }
 

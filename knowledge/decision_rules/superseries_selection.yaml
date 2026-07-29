@@ -1,9 +1,0 @@
-rule_id: superseries_selection_v0.1
-applies_to: [metadata_only, bulk_raw_counts, bulk_normalized, microarray_series_matrix, scrna_raw_counts, scrna_author_object]
-principle: GEO SuperSeries/SubSeries relationships require choosing the analysis unit before download and analysis.
-checks:
-  - Identify related GSE accessions from GEO relations and publication methods.
-  - Prefer the SubSeries matching the assay and biological question.
-  - Do not merge SubSeries with incompatible assays or sample definitions.
-safe_outcome:
-  - REVIEW_REQUIRED
