@@ -65,6 +65,10 @@ file_name <- if ("file_name" %in% names(supplements)) {
 } else {
   basename(supplements$supplement_url)
 }
+file_name <- basename(as.character(file_name))
+missing_name <- is.na(file_name) | !nzchar(file_name)
+file_name[missing_name] <- basename(as.character(supplements$supplement_url[missing_name]))
+file_name[is.na(file_name) | !nzchar(file_name)] <- paste0("supplement_", which(is.na(file_name) | !nzchar(file_name)))
 search_text <- paste(file_name, supplements$supplement_url)
 selected <- grepl(reviewed_regex, search_text, ignore.case = TRUE, perl = TRUE)
 if (!any(selected)) {
@@ -86,13 +90,30 @@ if (file.exists(series_meta)) {
 plans_dir <- file.path(run_dir, "plans")
 if (!dir.exists(plans_dir)) dir.create(plans_dir, recursive = TRUE)
 
+source_accession <- if ("source_accession" %in% names(supplements)) supplements$source_accession else rep(accession, nrow(supplements))
+source_scope <- if ("source_scope" %in% names(supplements)) supplements$source_scope else rep("series", nrow(supplements))
+source_file_name <- file_name
+planned_file_name <- source_file_name
+selected_dup <- selected &
+  (duplicated(tolower(planned_file_name)) | duplicated(tolower(planned_file_name), fromLast = TRUE))
+if (any(selected_dup)) {
+  prefix <- as.character(source_accession)
+  prefix[is.na(prefix) | !nzchar(prefix)] <- accession
+  planned_file_name[selected_dup] <- paste(prefix[selected_dup], source_file_name[selected_dup], sep = "_")
+}
+while (any(duplicated(tolower(planned_file_name[selected])))) {
+  dup <- selected & duplicated(tolower(planned_file_name))
+  planned_file_name[dup] <- paste0(seq_len(nrow(supplements))[dup], "_", planned_file_name[dup])
+}
+
 plan <- data.frame(
   accession = accession,
-  source_accession = if ("source_accession" %in% names(supplements)) supplements$source_accession else accession,
-  source_scope = if ("source_scope" %in% names(supplements)) supplements$source_scope else "series",
+  source_accession = source_accession,
+  source_scope = source_scope,
   selected = selected,
   reviewed = FALSE,
-  file_name = file_name,
+  source_file_name = source_file_name,
+  file_name = planned_file_name,
   supplement_url = supplements$supplement_url,
   size_bytes = if ("size" %in% names(supplements)) supplements$size else NA_real_,
   selection_reason = ifelse(selected, selection_reason, "not selected"),

@@ -199,6 +199,35 @@ if (!identical(legacy_plan$supplement_url[[1L]], legacy_url)) {
   fail("Download-plan URL-column fallback did not populate supplement_url.")
 }
 
+duplicate_name_dir <- file.path(scratch, "duplicate_download_names")
+dir.create(file.path(duplicate_name_dir, "resources"), recursive = TRUE, showWarnings = FALSE)
+utils::write.table(
+  data.frame(
+    source_accession = c("GSM000001", "GSM000002"),
+    source_scope = c("sample", "sample"),
+    file_name = c("matrix.mtx.gz", "matrix.mtx.gz"),
+    supplement_url = c(
+      "https://example.org/GSM000001/matrix.mtx.gz",
+      "https://example.org/GSM000002/matrix.mtx.gz"
+    ),
+    stringsAsFactors = FALSE
+  ),
+  file.path(duplicate_name_dir, "resources", "supplement_index.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE
+)
+expect_status(
+  "Download-plan duplicate local-name disambiguation",
+  "Rscript",
+  c(file.path(script_dir, "generate_download_plan.R"), duplicate_name_dir, "matrix\\.mtx", "sample-level matrix files"),
+  0L
+)
+duplicate_plan <- utils::read.delim(file.path(duplicate_name_dir, "plans", "download_plan.tsv"),
+  stringsAsFactors = FALSE, check.names = FALSE)
+selected_duplicate_names <- duplicate_plan$file_name[tolower(as.character(duplicate_plan$selected)) %in% c("true", "1", "yes")]
+if (any(duplicated(tolower(selected_duplicate_names)))) {
+  fail("Download plan did not disambiguate duplicate selected file names.")
+}
+
 report_dir <- file.path(scratch, "dataset_report")
 dir.create(file.path(report_dir, "resources"), recursive = TRUE, showWarnings = FALSE)
 utils::write.table(
@@ -433,12 +462,71 @@ expect_status(
   1L
 )
 
+gsea_rank <- file.path(scratch, "gsea_rank.tsv")
+utils::write.table(
+  data.frame(gene_symbol = sprintf("GENE%03d", 1:80), t = seq(4, -4, length.out = 80),
+    stringsAsFactors = FALSE),
+  gsea_rank, sep = "\t", quote = FALSE, row.names = FALSE
+)
+gsea_out <- file.path(scratch, "gsea_positive")
+expect_status(
+  "GSEA ID-overlap gate positive",
+  "Rscript",
+  c(file.path(core_dir, "enrichment", "run_preranked_gsea.R"),
+    "--rank-table", gsea_rank,
+    "--gene-column", "gene_symbol",
+    "--rank-column", "t",
+    "--gmt", file.path(ora_gmt_dir, "h.all.v1.Hs.symbols.gmt"),
+    "--out-dir", gsea_out,
+    "--collection", "h.all"),
+  0L
+)
+gsea_gate <- utils::read.delim(file.path(gsea_out, "tables", "gsea_id_overlap_gate_h.all.tsv"),
+  stringsAsFactors = FALSE)
+if (!identical(gsea_gate$gate_state[[1L]], "PASS")) {
+  fail("GSEA positive smoke did not pass ID-overlap gate.")
+}
+gsea_mismatch <- file.path(scratch, "gsea_mismatch.tsv")
+utils::write.table(
+  data.frame(gene_symbol = sprintf("ENSG%011d", 1:80), t = seq(4, -4, length.out = 80),
+    stringsAsFactors = FALSE),
+  gsea_mismatch, sep = "\t", quote = FALSE, row.names = FALSE
+)
+expect_status(
+  "GSEA ID-overlap gate mismatch refusal",
+  "Rscript",
+  c(file.path(core_dir, "enrichment", "run_preranked_gsea.R"),
+    "--rank-table", gsea_mismatch,
+    "--gene-column", "gene_symbol",
+    "--rank-column", "t",
+    "--gmt", file.path(ora_gmt_dir, "h.all.v1.Hs.symbols.gmt"),
+    "--out-dir", file.path(scratch, "gsea_negative"),
+    "--collection", "h.all"),
+  1L
+)
+
 cat("== Paired plot helper check ==\n")
 if (!requireNamespace("ggplot2", quietly = TRUE)) {
   fail("ggplot2 is required for paired plot smoke checks.")
 }
 limma_env <- new.env(parent = globalenv())
 source(file.path(core_dir, "bulk_limma_common.R"), local = limma_env)
+no_intercept_map <- data.frame(
+  sample_id = paste0("S", 1:4),
+  condition = factor(c("normal", "normal", "tumor", "tumor")),
+  batch = factor(c("A", "B", "A", "B")),
+  stringsAsFactors = FALSE
+)
+prep_no_intercept <- limma_env$prepare_contrast_factor(no_intercept_map, "condition", "normal")
+design_no_intercept <- stats::model.matrix(~ 0 + condition + batch, data = prep_no_intercept$sample_map)
+contrast_no_intercept <- limma_env$build_contrast_matrix(
+  design_no_intercept, ~ 0 + condition + batch,
+  "condition", "tumor", "normal", prep_no_intercept$sample_map
+)
+if (!identical(as.numeric(contrast_no_intercept["conditiontumor", 1L]), 1) ||
+    !identical(as.numeric(contrast_no_intercept["conditionnormal", 1L]), -1)) {
+  fail("No-intercept limma contrast did not resolve tumor-normal weights correctly.")
+}
 paired_figures <- file.path(scratch, "paired_figures")
 paired_tables <- file.path(scratch, "paired_tables")
 dir.create(paired_figures, recursive = TRUE, showWarnings = FALSE)
@@ -562,6 +650,48 @@ if (quick_mode) {
   }
 } else {
   cat("SKIP\tMicroarray driver optional check requires limma, ggplot2, yaml, and Biobase.\n")
+}
+
+cat("== scRNA intake optional check ==\n")
+if (quick_mode) {
+  cat("SKIP\tscRNA intake optional check skipped in quick mode.\n")
+} else if (all(vapply(c("SeuratObject", "Matrix"), requireNamespace, logical(1), quietly = TRUE))) {
+  scrna_dir <- file.path(scratch, "scrna_object_intake")
+  dir.create(file.path(scrna_dir, "raw"), recursive = TRUE, showWarnings = FALSE)
+  suppressPackageStartupMessages({
+    library(Matrix)
+    library(SeuratObject)
+  })
+  scrna_counts <- Matrix::Matrix(matrix(c(0, 1, 2, 0, 3, 4, 0, 5, 0, 6, 7, 0), nrow = 4L), sparse = TRUE)
+  rownames(scrna_counts) <- paste0("Gene", 1:4)
+  colnames(scrna_counts) <- paste0("Cell", 1:3)
+  scrna_obj <- SeuratObject::CreateSeuratObject(counts = scrna_counts)
+  scrna_obj$cell_type <- c("A", "B", "A")
+  scrna_obj$donor_id <- c("D1", "D1", "D2")
+  saveRDS(scrna_obj, file.path(scrna_dir, "raw", "object.rds"))
+  writeLines(c(
+    "accession: GSE123456",
+    "route: scrna_author_object",
+    "input:",
+    "  file: raw/object.rds",
+    "  input_type: seurat_rds",
+    "  location_type: local",
+    "review:",
+    "  input_type_confirmed: true"
+  ), file.path(scrna_dir, "run_manifest.yaml"), useBytes = TRUE)
+  expect_status(
+    "scRNA Seurat object inventory",
+    "Rscript",
+    c(file.path(core_dir, "scrna", "inspect_object.R"), file.path(scrna_dir, "run_manifest.yaml")),
+    0L
+  )
+  count_check <- utils::read.delim(file.path(scrna_dir, "tables", "count_layer_verification.tsv"),
+    stringsAsFactors = FALSE, check.names = FALSE)
+  if (!any(count_check$verified)) {
+    fail("scRNA intake did not verify the sparse counts layer.")
+  }
+} else {
+  cat("SKIP\tscRNA intake optional check requires SeuratObject and Matrix.\n")
 }
 
 cat("== Negative fixture checks ==\n")

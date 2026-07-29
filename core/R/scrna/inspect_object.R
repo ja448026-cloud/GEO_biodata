@@ -82,6 +82,51 @@ inventory$route_recommendation <- ""
 inventory$requires_agent_adjudication <- FALSE
 inventory$requires_user_input <- FALSE
 
+sample_matrix_values <- function(mat, sample_size = 100000L) {
+  if (inherits(mat, "sparseMatrix")) {
+    values <- mat@x
+    if (length(values) == 0L) return(0)
+    if (length(values) > sample_size) values <- sample(values, sample_size)
+    return(as.numeric(values))
+  }
+
+  total_entries <- prod(dim(mat))
+  if (!is.finite(total_entries) || total_entries < 1L) return(numeric())
+  idx <- sample(total_entries, min(sample_size, total_entries))
+  as.numeric(mat[idx])
+}
+
+verify_count_matrix <- function(mat, label) {
+  sampled <- sample_matrix_values(mat)
+  sampled <- sampled[is.finite(sampled)]
+  if (length(sampled) == 0L) {
+    return(data.frame(
+      candidate = label, verified = FALSE, storage = "unknown",
+      sampled_values = 0L, sampled_integer_fraction = NA_real_,
+      nonnegative_fraction = NA_real_, stringsAsFactors = FALSE
+    ))
+  }
+  data.frame(
+    candidate = label,
+    verified = sum(abs(sampled - round(sampled)) < 1e-8) / length(sampled) > 0.99 &&
+      sum(sampled >= -1e-8) / length(sampled) > 0.99,
+    storage = if (inherits(mat, "sparseMatrix")) "sparse" else "dense",
+    sampled_values = length(sampled),
+    sampled_integer_fraction = round(sum(abs(sampled - round(sampled)) < 1e-8) / length(sampled), 4),
+    nonnegative_fraction = round(sum(sampled >= -1e-8) / length(sampled), 4),
+    stringsAsFactors = FALSE
+  )
+}
+
+get_seurat_counts_matrix <- function(assay) {
+  if (inherits(assay, "Assay5")) {
+    if ("counts" %in% names(assay@layers)) return(assay@layers[["counts"]])
+    return(NULL)
+  }
+  if ("counts" %in% slotNames(assay)) return(slot(assay, "counts"))
+  NULL
+}
+
 # ── Seurat RDS path ──────────────────────────────────────────────────────────
 if (ext %in% c("rds")) {
   if (!requireNamespace("SeuratObject", quietly = TRUE)) {
@@ -107,8 +152,8 @@ if (ext %in% c("rds")) {
       layers <- if (inherits(assay, "Assay5")) names(assay@layers) else c("counts", "data", "scale.data")
       n_features <- nrow(assay)
       sparsity_pct <- NA_real_
-      if (inherits(assay, "Assay5") && "counts" %in% names(assay@layers)) {
-        ct <- assay@layers[["counts"]]
+      ct <- get_seurat_counts_matrix(assay)
+      if (!is.null(ct)) {
         if (inherits(ct, "sparseMatrix")) {
           sparsity_pct <- round((1 - Matrix::nnzero(ct) / prod(dim(ct))) * 100, 1)
           inventory$sparse_storage <- "sparse"
@@ -122,42 +167,35 @@ if (ext %in% c("rds")) {
     # Counts layer: candidate detection
     count_candidates <- character()
     for (aname in assays_present) {
-      ad <- assay_details[[aname]]
-      if (any(grepl("^counts$", ad$layers, ignore.case = TRUE))) {
+      if (!is.null(get_seurat_counts_matrix(obj@assays[[aname]]))) {
         count_candidates <- c(count_candidates, paste0(aname, "/counts"))
       }
     }
     inventory$count_layer_candidate <- paste(count_candidates, collapse = "; ")
 
-    # Sample verification of counts layer
+    # Sample verification of every candidate counts layer.
     if (length(count_candidates) > 0L && requireNamespace("Matrix", quietly = TRUE)) {
-      assay_name <- assays_present[[1L]]
-      assay <- obj@assays[[assay_name]]
-      if (inherits(assay, "Assay5") && "counts" %in% names(assay@layers)) {
-        counts_data <- assay@layers[["counts"]]
-        total_entries <- prod(dim(counts_data))
-        sample_size <- min(100000L, total_entries)
-        sampled <- if (inherits(counts_data, "sparseMatrix")) {
-          non_zero <- Matrix::which(counts_data != 0)
-          if (length(non_zero) > sample_size) non_zero <- sample(non_zero, sample_size)
-          counts_data[non_zero]
-        } else {
-          idx <- sample(total_entries, sample_size)
-          counts_data[idx]
-        }
-        inventory$sampled_integer_fraction <- round(sum(abs(sampled - round(sampled)) < 1e-8) / length(sampled), 4)
-        inventory$nonnegative_fraction <- round(sum(sampled >= -1e-8) / length(sampled), 4)
+      count_checks <- do.call(rbind, lapply(count_candidates, function(candidate) {
+        assay_name <- sub("/counts$", "", candidate)
+        verify_count_matrix(get_seurat_counts_matrix(obj@assays[[assay_name]]), candidate)
+      }))
+      utils::write.table(count_checks, file.path(tables_dir, "count_layer_verification.tsv"),
+        sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 
-        # Verify if counts are integer-like and non-negative
-        if (inventory$sampled_integer_fraction > 0.99 && inventory$nonnegative_fraction > 0.99) {
-          inventory$count_layer_verified <- TRUE
-          inventory$verification_method <- "sampled_check"
-          inventory$route_recommendation <- "scrna_raw_counts"
-        } else {
-          inventory$count_layer_verified <- FALSE
-          inventory$verification_method <- "sampled_non_integer"
-          inventory$route_recommendation <- "scrna_author_object"
-        }
+      verified_idx <- which(count_checks$verified)
+      if (length(verified_idx) > 0L) {
+        best <- verified_idx[[1L]]
+        inventory$count_layer_verified <- TRUE
+        inventory$verification_method <- "sampled_nonzero_values_per_candidate"
+        inventory$sampled_integer_fraction <- count_checks$sampled_integer_fraction[[best]]
+        inventory$nonnegative_fraction <- count_checks$nonnegative_fraction[[best]]
+        inventory$route_recommendation <- "scrna_raw_counts"
+      } else {
+        inventory$count_layer_verified <- FALSE
+        inventory$verification_method <- "sampled_non_integer_per_candidate"
+        inventory$sampled_integer_fraction <- max(count_checks$sampled_integer_fraction, na.rm = TRUE)
+        inventory$nonnegative_fraction <- max(count_checks$nonnegative_fraction, na.rm = TRUE)
+        inventory$route_recommendation <- "scrna_author_object"
       }
     }
 
@@ -311,9 +349,9 @@ if (ext %in% c("rds")) {
     count_candidates <- character()
     for (aname in assays_present) {
       assay <- obj@assays[[aname]]
-      if (inherits(assay, "Assay5") && "counts" %in% names(assay@layers)) {
+      ct <- get_seurat_counts_matrix(assay)
+      if (!is.null(ct)) {
         count_candidates <- c(count_candidates, paste0(aname, "/counts"))
-        ct <- assay@layers[["counts"]]
         inventory$sparse_storage <- if (inherits(ct, "sparseMatrix")) "sparse" else "dense"
         if (inherits(ct, "sparseMatrix")) {
           inventory$estimated_dense_memory_gb <- round(prod(dim(ct)) * 8 / 1e9, 2)
@@ -321,6 +359,27 @@ if (ext %in% c("rds")) {
       }
     }
     inventory$count_layer_candidate <- paste(count_candidates, collapse = "; ")
+    if (length(count_candidates) > 0L && requireNamespace("Matrix", quietly = TRUE)) {
+      count_checks <- do.call(rbind, lapply(count_candidates, function(candidate) {
+        assay_name <- sub("/counts$", "", candidate)
+        verify_count_matrix(get_seurat_counts_matrix(obj@assays[[assay_name]]), candidate)
+      }))
+      utils::write.table(count_checks, file.path(tables_dir, "count_layer_verification.tsv"),
+        sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+      verified_idx <- which(count_checks$verified)
+      inventory$count_layer_verified <- length(verified_idx) > 0L
+      inventory$verification_method <- if (inventory$count_layer_verified) {
+        "sampled_nonzero_values_per_candidate"
+      } else {
+        "sampled_non_integer_per_candidate"
+      }
+      if (length(verified_idx) > 0L) {
+        best <- verified_idx[[1L]]
+        inventory$sampled_integer_fraction <- count_checks$sampled_integer_fraction[[best]]
+        inventory$nonnegative_fraction <- count_checks$nonnegative_fraction[[best]]
+        inventory$route_recommendation <- "scrna_raw_counts"
+      }
+    }
     inventory$author_labels_found <- paste(grep("cell.?type|celltype|cluster|annotation|label|ident",
       names(obj@meta.data), value = TRUE, ignore.case = TRUE), collapse = "; ")
     inventory$embeddings <- paste(names(obj@reductions), collapse = "; ")

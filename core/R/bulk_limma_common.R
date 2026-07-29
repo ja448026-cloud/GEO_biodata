@@ -44,17 +44,12 @@ prepare_contrast_factor <- function(sample_map, factor_name, denominator) {
 
 # ── Explicit contrast matrix builder ──────────────────────────────────────────
 
-build_contrast_matrix <- function(design, factor, numerator, denominator, sample_map) {
-  # After prepare_contrast_factor() has releveled the factor,
-  # denominator is the reference level (intercept).
-  # The numerator coefficient is simply paste0(factor, numerator).
-
+build_contrast_matrix <- function(design, design_formula, factor, numerator, denominator, sample_map) {
   if (!factor %in% names(sample_map)) {
     stop("Contrast factor '", factor, "' not found in sample mapping columns: ",
       paste(names(sample_map), collapse = ", "), call. = FALSE)
   }
 
-  factor_values <- as.character(sample_map[[factor]])
   factor_levels <- levels(factor(sample_map[[factor]]))
 
   if (!numerator %in% factor_levels) {
@@ -66,22 +61,39 @@ build_contrast_matrix <- function(design, factor, numerator, denominator, sample
       factor, "' levels: ", paste(factor_levels, collapse = ", "), call. = FALSE)
   }
 
-  # After relevel, denominator IS the reference (first level), so its coefficient
-  # is part of the intercept. The contrast is just the numerator coefficient.
-  numerator_coef <- paste0(factor, numerator)
   design_cols <- colnames(design)
-
-  if (!numerator_coef %in% design_cols) {
-    stop("Numerator coefficient '", numerator_coef,
-      "' not found in design matrix columns: ", paste(design_cols, collapse = ", "),
-      ". This should not happen after prepare_contrast_factor(). ",
-      "Check that the design formula includes the contrast factor.",
-      call. = FALSE)
+  virtual_map <- sample_map[rep(1L, 2L), , drop = FALSE]
+  for (col in names(sample_map)) {
+    if (is.factor(sample_map[[col]])) {
+      virtual_map[[col]] <- factor(as.character(virtual_map[[col]]),
+        levels = levels(sample_map[[col]]))
+    } else if (is.character(sample_map[[col]])) {
+      source_levels <- unique(as.character(sample_map[[col]]))
+      virtual_map[[col]] <- factor(as.character(virtual_map[[col]]),
+        levels = source_levels[nzchar(source_levels)])
+    }
   }
+  virtual_map[[factor]] <- factor(c(denominator, numerator), levels = factor_levels)
 
-  contrast_vec <- rep(0, ncol(design))
+  virtual_design <- stats::model.matrix(design_formula, data = virtual_map)
+  missing_cols <- setdiff(design_cols, colnames(virtual_design))
+  if (length(missing_cols) > 0L) {
+    virtual_design <- cbind(
+      virtual_design,
+      matrix(0, nrow = nrow(virtual_design), ncol = length(missing_cols),
+        dimnames = list(NULL, missing_cols))
+    )
+  }
+  extra_cols <- setdiff(colnames(virtual_design), design_cols)
+  if (length(extra_cols) > 0L) virtual_design <- virtual_design[, setdiff(colnames(virtual_design), extra_cols), drop = FALSE]
+  virtual_design <- virtual_design[, design_cols, drop = FALSE]
+
+  contrast_vec <- as.numeric(virtual_design[2L, ] - virtual_design[1L, ])
   names(contrast_vec) <- design_cols
-  contrast_vec[numerator_coef] <- 1
+  if (!any(abs(contrast_vec) > 1e-12)) {
+    stop("Contrast resolved to all zeros. Check design formula and contrast factor: ",
+      deparse(design_formula), call. = FALSE)
+  }
 
   contrast_name <- paste(numerator, "vs", denominator, sep = "_")
   cm <- matrix(contrast_vec, ncol = 1L, dimnames = list(design_cols, contrast_name))
@@ -112,6 +124,24 @@ read_sample_mapping <- function(sample_path, sample_id_col, contrast_factor) {
   }
   if (!contrast_factor %in% names(sample_map)) {
     stop("Contrast factor '", contrast_factor, "' not found in sample mapping.", call. = FALSE)
+  }
+  sample_ids <- as.character(sample_map[[sample_id_col]])
+  if (any(!nzchar(sample_ids)) || anyNA(sample_ids)) {
+    stop("Sample ID column contains missing or empty values: ", sample_id_col, call. = FALSE)
+  }
+  if (any(duplicated(sample_ids))) {
+    stop("Sample ID column contains duplicates. Technical replicates must not be treated as independent biological samples: ",
+      paste(unique(sample_ids[duplicated(sample_ids)]), collapse = ", "), call. = FALSE)
+  }
+  technical_cols <- grep("technical.*rep|tech.*rep|replicate_type", names(sample_map),
+    value = TRUE, ignore.case = TRUE)
+  biological_cols <- grep("biological.*rep|bio.*rep|donor|patient|subject|individual|mouse_id",
+    names(sample_map), value = TRUE, ignore.case = TRUE)
+  if (length(technical_cols) > 0L && length(biological_cols) == 0L) {
+    stop("TECHNICAL_REPLICATE_REVIEW_REQUIRED: sample mapping contains technical-replicate fields (",
+      paste(technical_cols, collapse = ", "),
+      ") but no biological unit column such as donor_id, patient_id, subject_id, or biological_replicate.",
+      call. = FALSE)
   }
   sample_map
 }
@@ -240,6 +270,7 @@ run_limma_de <- function(mat, sample_map, design_formula, contrast) {
   # Step 3: Build explicit contrast matrix (numerator coefficient = 1)
   contrast_matrix <- build_contrast_matrix(
     design = design,
+    design_formula = design_formula,
     factor = contrast$factor,
     numerator = contrast$numerator,
     denominator = contrast$denominator,
@@ -366,7 +397,8 @@ write_limma_outputs <- function(result, ebayes_fit, design, contrast_matrix,
     paste(" ", factor_levels_after),
     "",
     paste("Contrast:", numerator, "-", denominator),
-    paste("Design coefficient:", paste0(contrast_factor, numerator)),
+    "Contrast construction: virtual numerator-minus-denominator design rows",
+    "See tables/contrast_matrix_used.tsv for the exact coefficient weights.",
     ""
   )
   writeLines(resolution_lines, file.path(logs_dir, "contrast_resolution.txt"), useBytes = TRUE)

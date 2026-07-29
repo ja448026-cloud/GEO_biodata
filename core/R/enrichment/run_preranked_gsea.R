@@ -3,7 +3,7 @@
 args <- commandArgs(trailingOnly = TRUE)
 usage <- paste(
   "Usage:",
-  "  run_preranked_gsea.R --rank-table de.tsv --gene-column feature_id --rank-column t --gmt sets.gmt --out-dir run_dir [--collection name] [--min-size 10] [--max-size 500]",
+  "  run_preranked_gsea.R --rank-table de.tsv --gene-column feature_id --rank-column t --gmt sets.gmt --out-dir run_dir [--collection name] [--min-size 10] [--max-size 500] [--min-overlap-fraction 0.01]",
   sep = "\n"
 )
 if (length(args) < 10L) stop(usage, call. = FALSE)
@@ -22,6 +22,7 @@ out_dir <- get_opt("--out-dir")
 collection <- get_opt("--collection", "custom")
 min_size <- as.integer(get_opt("--min-size", "10"))
 max_size <- as.integer(get_opt("--max-size", "500"))
+min_overlap_fraction <- suppressWarnings(as.numeric(get_opt("--min-overlap-fraction", "0.01")))
 
 for (required_path in c(rank_table_path, gmt_path)) {
   if (is.na(required_path) || !file.exists(required_path)) {
@@ -31,6 +32,7 @@ for (required_path in c(rank_table_path, gmt_path)) {
 if (is.na(out_dir) || !nzchar(out_dir)) stop("--out-dir is required.", call. = FALSE)
 if (!is.finite(min_size) || min_size < 1L) min_size <- 10L
 if (!is.finite(max_size) || max_size < min_size) max_size <- 500L
+if (!is.finite(min_overlap_fraction) || min_overlap_fraction < 0) min_overlap_fraction <- 0.01
 
 required <- c("fgsea")
 missing <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
@@ -73,6 +75,32 @@ ranks <- sort(ranks, decreasing = TRUE)
 gene_sets <- fgsea::gmtPathways(gmt_path)
 if (!length(gene_sets)) stop("No gene sets were read from GMT: ", gmt_path, call. = FALSE)
 
+gmt_genes <- unique(unlist(gene_sets, use.names = FALSE))
+overlap_genes <- intersect(names(ranks), gmt_genes)
+overlap_fraction_ranked <- length(overlap_genes) / length(ranks)
+overlap_fraction_gmt <- if (length(gmt_genes) > 0L) length(overlap_genes) / length(gmt_genes) else 0
+overlap_gate <- data.frame(
+  collection = collection,
+  ranked_genes = length(ranks),
+  gmt_genes = length(gmt_genes),
+  overlap_genes = length(overlap_genes),
+  overlap_fraction_ranked = round(overlap_fraction_ranked, 4),
+  overlap_fraction_gmt = round(overlap_fraction_gmt, 4),
+  min_overlap_genes = min_size,
+  min_overlap_fraction = min_overlap_fraction,
+  gate_state = if (length(overlap_genes) >= min_size &&
+      overlap_fraction_ranked >= min_overlap_fraction) "PASS" else "BLOCKED",
+  stringsAsFactors = FALSE
+)
+utils::write.table(overlap_gate, file.path(tables_dir, paste0("gsea_id_overlap_gate_", collection, ".tsv")),
+  sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+if (!identical(overlap_gate$gate_state[[1L]], "PASS")) {
+  stop("GSEA_ID_OVERLAP_GATE_FAILED: ranked gene IDs overlap GMT by ",
+    length(overlap_genes), " genes (", round(overlap_fraction_ranked * 100, 2),
+    "% of ranked IDs). Check gene ID space before running GSEA.",
+    call. = FALSE)
+}
+
 set.seed(123L)
 res <- fgsea::fgsea(pathways = gene_sets, stats = ranks, minSize = min_size, maxSize = max_size, eps = 0)
 res <- res[order(res$padj, -abs(res$NES)), ]
@@ -91,6 +119,11 @@ manifest <- data.frame(
   gmt_sha256 = if (requireNamespace("digest", quietly = TRUE)) digest::digest(file = gmt_path, algo = "sha256") else "",
   ranked_genes = length(ranks),
   gene_sets_total = length(gene_sets),
+  gmt_genes = length(gmt_genes),
+  overlap_genes = length(overlap_genes),
+  overlap_fraction_ranked = round(overlap_fraction_ranked, 4),
+  overlap_fraction_gmt = round(overlap_fraction_gmt, 4),
+  min_overlap_fraction = min_overlap_fraction,
   min_size = min_size,
   max_size = max_size,
   positive_rank_interpretation = "originating contrast numerator/up",

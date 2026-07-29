@@ -94,6 +94,8 @@ $env:GEO_BIODATA_BACKUP_TIMEOUT_SEC = "3600"
 
 On Windows, prefer the full x64 Rscript path for network-heavy commands if a shell-provided `Rscript` crashes during GEOquery or download calls.
 
+`generate_download_plan.R` preserves the original supplement name in `source_file_name` and disambiguates duplicate local `file_name` values so sample-level supplements cannot overwrite each other.
+
 Linux/macOS shells use the same `Rscript` commands with `/` paths, for example:
 
 ```bash
@@ -122,6 +124,8 @@ Then select exactly one route:
 | `scrna_author_object` | `core\R\scrna\inspect_object.R` |
 
 Use `geo-biodata-enrichment` only after a DE, mapped gene list, or ranked table exists. Current helpers include preranked GSEA and ORA with a local GMT file; ORA requires an explicit gene universe and mapping audit.
+
+Preranked GSEA writes an ID-overlap gate table and stops when the rank-table IDs do not overlap the GMT ID space enough to support interpretation.
 
 Use `geo-biodata-scrna-intake` for object inventory only. If reclustering, marker review, annotation, or condition DE is needed, use the handoff notes in `docs/handoffs/` with dedicated local single-cell skills. Cluster markers are descriptive; condition DE in scRNA should use sample/donor-level pseudobulk.
 

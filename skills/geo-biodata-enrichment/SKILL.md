@@ -24,6 +24,7 @@ Rules:
 - Prefer limma `t`, DESeq2 `stat`, or another signed statistic.
 - Positive ranks mean numerator/up from the originating contrast.
 - Deduplicate gene IDs; keep the largest absolute rank.
+- Confirm gene-ID space before interpretation; the executor writes `gsea_id_overlap_gate_*.tsv` and stops when rank IDs barely overlap the GMT.
 - Record GMT path, hash, size filters, rank column, and session info.
 - Pathway redundancy is automatically reduced via leading-edge Jaccard clustering; results in `gsea_pathway_redundancy_*.tsv`.
 
@@ -70,6 +71,6 @@ write_mapping_audit(attr(pmap, "stats"), pmap, de_results, "mapping_audit.tsv")
 
 ## Output Contract
 
-GSEA produces `tables/gsea_results_*.tsv`, optional `tables/gsea_pathway_redundancy_*.tsv`, `figures/gsea_top_*.pdf`, `tables/gsea_manifest_*.tsv`, `gsea_status.tsv`, and `logs/sessionInfo_gsea_*.txt`.
+GSEA produces `tables/gsea_results_*.tsv`, `tables/gsea_id_overlap_gate_*.tsv`, optional `tables/gsea_pathway_redundancy_*.tsv`, `figures/gsea_top_*.pdf`, `tables/gsea_manifest_*.tsv`, `gsea_status.tsv`, and `logs/sessionInfo_gsea_*.txt`.
 
 ORA produces `tables/ora_results.tsv`, optional `tables/ora_pathway_redundancy.tsv`, `figures/ora_top_dot.pdf`, `tables/ora_manifest.tsv`, `ora_status.tsv`, and `logs/sessionInfo_ora.txt`.

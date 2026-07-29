@@ -9,6 +9,8 @@ description: >
 
 # GEO_biodata Workflow
 
+Deprecated compatibility entry point. Keep it available for old prompts; do not add new workflow rules here.
+
 This compatibility skill keeps the original script bundle available. For new work, route to `geo-biodata` first and then use the smallest current module.
 
 ## Choose A Narrow Skill

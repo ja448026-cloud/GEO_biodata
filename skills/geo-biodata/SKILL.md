@@ -23,4 +23,6 @@ Start with intake unless the user already provides a validated manifest or a DE/
 
 Do not run statistical analysis from filenames alone. Preserve raw downloads unchanged. Keep handoffs file-based and short.
 
+Keep DOI/PMID/PMCID lookup in intake as context enrichment. It can improve supplement discovery and reporting, but missing DOI metadata should not block GEO file inventory or reviewed downloads.
+
 For scRNA clustering, marker annotation, cell communication, trajectory, or condition DE, use mature single-cell tools/skills after `geo-biodata-scrna-intake` confirms object content and metadata.

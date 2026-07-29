@@ -214,6 +214,15 @@ if (length(args) == 2L) {
   if (any(!grepl("^(https?|ftp)://", selected$supplement_url, ignore.case = TRUE))) {
     stop("Selected supplement URLs must start with http://, https://, or ftp://.", call. = FALSE)
   }
+  planned_names <- basename(as.character(selected$file_name))
+  if (any(!nzchar(planned_names)) || any(is.na(planned_names))) {
+    stop("Selected rows must include non-empty local file_name values.", call. = FALSE)
+  }
+  duplicate_names <- unique(planned_names[duplicated(tolower(planned_names))])
+  if (length(duplicate_names) > 0L) {
+    stop("Selected download plan would overwrite local files. Regenerate the plan or assign unique file_name values: ",
+      paste(duplicate_names, collapse = ", "), call. = FALSE)
+  }
   if ("size_bytes" %in% names(selected)) {
     sizes <- suppressWarnings(as.numeric(selected$size_bytes))
     known_sizes <- sizes[is.finite(sizes)]

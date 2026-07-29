@@ -8,6 +8,10 @@ input:
   gene_id_type: gene_symbol
   species: human
   platform_id: ""
+  scale:
+    transformed: true
+    transform: log2_intensity
+    evidence_source: validation_fixture
 
 sample_mapping:
   file: resources/sample_mapping_reviewed.tsv

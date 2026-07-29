@@ -230,6 +230,52 @@ input_data <- switch(input_type,
 mat <- input_data$matrix
 processing_notes <- input_data$processing_notes %||% "not_provided"
 
+scale_config <- manifest$input$scale %||% list(transformed = FALSE, transform = "", evidence_source = "")
+scale_check <- validate_scale_contract(input_type, scale_config, mat)
+processing_text <- paste(
+  processing_notes,
+  scale_config$transform %||% "",
+  scale_config$evidence_source %||% "",
+  collapse = " "
+)
+has_scale_evidence <- grepl("log2|log transform|log-transformed|rma|quantile|normalized|vsn",
+  processing_text, ignore.case = TRUE) || isTRUE(scale_config$transformed)
+
+scale_gate <- data.frame(
+  input_type = input_type,
+  transformed = isTRUE(scale_config$transformed),
+  transform = scale_config$transform %||% "",
+  evidence_source = scale_config$evidence_source %||% "",
+  raw_like = scale_check$raw_like,
+  integer_ratio = round(scale_check$integer_ratio, 4),
+  has_scale_evidence = has_scale_evidence,
+  gate_state = "PASS",
+  note = "",
+  stringsAsFactors = FALSE
+)
+if (scale_check$raw_like) {
+  scale_gate$gate_state <- "BLOCKED"
+  scale_gate$note <- "Microarray input appears raw-count-like; use a counts route or provide transformed intensities."
+  utils::write.table(scale_gate, file.path(tables_dir, "microarray_scale_gate.tsv"),
+    sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+  stop("MICROARRAY_SCALE_CONFLICT: matrix appears raw-count-like (",
+    round(scale_check$integer_ratio * 100, 1), "% integer-like, all non-negative). ",
+    "Microarray limma route requires normalized/log-scale intensity evidence.",
+    call. = FALSE)
+}
+if (!has_scale_evidence) {
+  fallback_events <- log_fallback(fallback_events,
+    "microarray_scale_gate", "scale_evidence_missing",
+    "no log/RMA/quantile/normalization evidence in manifest or processing notes",
+    "confirmed microarray intensity scale", "continue_with_review_required",
+    "Limma can run, but scale must be reviewed before biological interpretation.",
+    requires_review = TRUE)
+  scale_gate$gate_state <- "REVIEW_REQUIRED"
+  scale_gate$note <- "No explicit transformed-intensity evidence found; interpretation requires review."
+}
+utils::write.table(scale_gate, file.path(tables_dir, "microarray_scale_gate.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+
 # Detect platforms from input if not explicitly set
 detected_from_input <- input_data$platform_ids %||% character()
 if (!nzchar(detected_platforms) && length(detected_from_input) > 0L) {
