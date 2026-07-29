@@ -9,6 +9,8 @@ description: >
 
 # GEO_biodata Workflow
 
+> DEPRECATED: compatibility entry point only. Prefer `geo-biodata` and the narrow current modules for new work.
+
 Deprecated compatibility entry point. Keep it available for old prompts; do not add new workflow rules here.
 
 This compatibility skill keeps the original script bundle available. For new work, route to `geo-biodata` first and then use the smallest current module.
@@ -37,8 +39,6 @@ Stable public executors now live under `core/R`. These legacy paths remain avail
 - `scripts/drivers/run_bulk_normalized.R`
 - `scripts/drivers/run_microarray.R`
 - `scripts/drivers/inspect_scrna_object.R`
-- `scripts/run_gsea_template.R`
-- `scripts/marker_utilities.R`
 
 Do not read method-heavy references unless the selected current module requires them.
 
