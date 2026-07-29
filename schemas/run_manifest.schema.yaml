@@ -1,6 +1,6 @@
 schema_version: 0.3
 
-route_ontology:
+routes:
   bulk_raw_counts:
     input_types: [raw_integer_counts]
     requires_input_file: true

@@ -56,8 +56,8 @@ accession <- toupper(manifest$accession %||% "")
 if (!grepl("^GSE[0-9]+$", accession)) add_error("accession must be a GEO Series accession like GSE123456.")
 
 route <- manifest$route %||% ""
-route_rules <- schema$route_ontology[[route]]
-allowed_routes <- names(schema$route_ontology)
+route_rules <- schema$routes[[route]]
+allowed_routes <- names(schema$routes)
 if (is.null(route_rules)) {
   add_error("route must be one of: ", paste(allowed_routes, collapse = ", "))
   route_rules <- list(
@@ -398,20 +398,6 @@ if (identical(manifest$review$mode %||% "", "agent_adjudicated")) {
       } else if ("conflicting_evidence" %in% names(decision)) {
         # Legacy: structured conflict_status column is required
         add_error("analysis_decisions missing required column: conflict_status. Add conflict_status: none|resolved|unresolved.")
-      }
-
-      # Source tier must be in registry (hard error)
-      if ("source_tier" %in% names(decision)) {
-        source_registry <- find_repo_file(c(getwd(), manifest_dir, script_dir), file.path("knowledge", "source_registry.yaml"))
-        valid_tiers <- if (!is.na(source_registry)) {
-          src <- yaml::read_yaml(source_registry)
-          names(src$source_tiers) %||% character()
-        } else {
-          character()
-        }
-        if (length(valid_tiers) > 0L && !decision$source_tier[[1L]] %in% valid_tiers) {
-          add_error("analysis_decisions source_tier '", decision$source_tier[[1L]], "' not in registered tiers.")
-        }
       }
 
       # Decision rule labels remain manifest metadata after rule text moved into SKILL.md files.

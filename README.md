@@ -15,7 +15,7 @@ Use the smallest skill that matches the current task:
 | Decide which module to use | `geo-biodata` |
 | GEO metadata, DOI/PMID/PMCID, publication supplements, file inventory, reviewed download, file-level QC, manifest draft | `geo-biodata-intake` |
 | Bulk raw-count, bulk-normalized, or microarray DE/QC from a validated manifest | `geo-biodata-bulk` |
-| Preranked GSEA from an existing DE/rank table and local GMT file | `geo-biodata-enrichment` |
+| Preranked GSEA or ORA from a mapped gene list/ranked table and local GMT file | `geo-biodata-enrichment` |
 | Read-only scRNA object inventory for Seurat/H5AD/RDS/MTX | `geo-biodata-scrna` |
 | Independent source-table-linked figure planning, generation guidance, and QA | `geo-biodata-figure` |
 | Legacy prompts naming the old entry point | `geo-biodata-workflow` |
@@ -123,7 +123,7 @@ Then select exactly one route:
 | `microarray_series_matrix` | `core\R\drivers\run_microarray.R` |
 | `scrna_author_object` | `core\R\scrna\inspect_object.R` |
 
-Use `geo-biodata-enrichment` only after a DE, mapped gene list, or ranked table exists. Current helpers include preranked GSEA and ORA with a local GMT file; ORA requires an explicit gene universe and mapping audit.
+Use `geo-biodata-enrichment` only after a DE, mapped gene list, or ranked table exists. Current helpers include preranked GSEA and ORA with a local GMT file; ORA and mapping are implemented, while Reactome remains a guidance handoff.
 
 Preranked GSEA writes an ID-overlap gate table and stops when the rank-table IDs do not overlap the GMT ID space enough to support interpretation.
 
