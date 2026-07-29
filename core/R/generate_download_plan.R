@@ -88,6 +88,8 @@ if (!dir.exists(plans_dir)) dir.create(plans_dir, recursive = TRUE)
 
 plan <- data.frame(
   accession = accession,
+  source_accession = if ("source_accession" %in% names(supplements)) supplements$source_accession else accession,
+  source_scope = if ("source_scope" %in% names(supplements)) supplements$source_scope else "series",
   selected = selected,
   reviewed = FALSE,
   file_name = file_name,

@@ -5,7 +5,7 @@ description: Unified GEO_biodata entry point. Use when a user gives a GEO access
 
 # GEO_biodata
 
-Use this as the default entry point. Route to the smallest executable module and do not load downstream method references until needed.
+Use this as the default entry point. This project is a skill library plus small R helpers, not a full software framework. Route to the smallest module that helps the user finish the GEO task.
 
 ## Module Selection
 
@@ -21,6 +21,6 @@ Use this as the default entry point. Route to the smallest executable module and
 
 Start with intake unless the user already provides a validated manifest or a DE/rank table.
 
-Do not run statistical analysis from filenames alone. Preserve raw downloads unchanged. Pass state between modules with files, especially `intake_handoff.yaml` and `run_manifest.yaml`.
+Do not run statistical analysis from filenames alone. Preserve raw downloads unchanged. Keep handoffs file-based and short.
 
-For scRNA clustering, marker annotation, cell communication, trajectory, or condition DE, hand off to dedicated single-cell skills after `geo-biodata-scrna-intake` confirms object content and metadata.
+For scRNA clustering, marker annotation, cell communication, trajectory, or condition DE, use mature single-cell tools/skills after `geo-biodata-scrna-intake` confirms object content and metadata.

@@ -199,6 +199,43 @@ if (!identical(legacy_plan$supplement_url[[1L]], legacy_url)) {
   fail("Download-plan URL-column fallback did not populate supplement_url.")
 }
 
+report_dir <- file.path(scratch, "dataset_report")
+dir.create(file.path(report_dir, "resources"), recursive = TRUE, showWarnings = FALSE)
+utils::write.table(
+  data.frame(field = c("title", "taxon", "status", "gdstype"), value = c("Smoke dataset", "Homo sapiens", "Public", "Expression profiling by high throughput sequencing")),
+  file.path(report_dir, "resources", "series_metadata.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE
+)
+utils::write.table(
+  data.frame(identifier_type = "PMID", identifier = "", pmcid = "", url = "", stringsAsFactors = FALSE),
+  file.path(report_dir, "resources", "publication_links.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE
+)
+utils::write.table(
+  data.frame(accession = "GSE000000", assay_type = "rna-seq", recommended_route = "bulk_raw_counts", review_required = TRUE),
+  file.path(report_dir, "resources", "routing_hint.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE
+)
+utils::write.table(
+  data.frame(file_name = "GSE000000_counts.tsv.gz", size = 100, stringsAsFactors = FALSE),
+  file.path(report_dir, "resources", "supplement_index.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE
+)
+utils::write.table(
+  data.frame(gsm = "GSM000000", title = "sample", stringsAsFactors = FALSE),
+  file.path(report_dir, "resources", "sample_index.tsv"),
+  sep = "\t", quote = FALSE, row.names = FALSE
+)
+expect_status(
+  "Dataset report generation",
+  "Rscript",
+  c(file.path(script_dir, "generate_dataset_report.R"), report_dir),
+  0L
+)
+if (!file.exists(file.path(report_dir, "dataset_report.md"))) {
+  fail("Dataset report was not generated.")
+}
+
 cat("== Manifest validation checks ==\n")
 manifest_fixture <- file.path(repo_root, "validation", "fixtures", "manifest_valid", "run_manifest.yaml")
 expect_status(

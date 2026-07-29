@@ -76,6 +76,59 @@ collapse_value <- function(value) {
   paste(as.character(value), collapse = "; ")
 }
 
+normalize_supplement_table <- function(supp, source_accession, source_scope) {
+  if (is.null(supp) || nrow(supp) == 0L) {
+    return(data.frame())
+  }
+  supplement_rows <- rownames(supp)
+  supp <- data.frame(supp, check.names = FALSE)
+  row_is_url <- grepl("^(https?|ftp)://", supplement_rows, ignore.case = TRUE)
+  url_col <- if ("url" %in% names(supp)) as.character(supp$url) else rep("", nrow(supp))
+  url_col[is.na(url_col)] <- ""
+  col_is_url <- grepl("^(https?|ftp)://", url_col, ignore.case = TRUE)
+  supp$supplement_url <- ifelse(row_is_url, supplement_rows, ifelse(col_is_url, url_col, NA_character_))
+  supp$file_name <- ifelse(
+    row_is_url,
+    basename(supplement_rows),
+    if ("fname" %in% names(supp)) basename(supp$fname) else basename(supplement_rows)
+  )
+  supp$source_accession <- source_accession
+  supp$source_scope <- source_scope
+  if ("size" %in% names(supp)) {
+    supp$size_mb <- round(supp$size / 1e6, 2)
+  }
+  supp
+}
+
+list_geo_supplements <- function(geo_accession, source_scope) {
+  tries <- if (identical(source_scope, "sample")) 3L else 1L
+  out <- data.frame()
+  for (attempt in seq_len(tries)) {
+    supp <- GEOquery::getGEOSuppFiles(
+      geo_accession,
+      makeDirectory = FALSE,
+      baseDir = resources_dir,
+      fetch_files = FALSE
+    )
+    out <- normalize_supplement_table(supp, geo_accession, source_scope)
+    if (nrow(out) > 0L || attempt == tries) break
+    Sys.sleep(min(2L, attempt))
+  }
+  out
+}
+
+rbind_fill <- function(tables) {
+  tables <- tables[vapply(tables, function(x) is.data.frame(x) && nrow(x) > 0L, logical(1))]
+  if (length(tables) == 0L) return(data.frame())
+  all_names <- unique(unlist(lapply(tables, names), use.names = FALSE))
+  tables <- lapply(tables, function(x) {
+    missing_cols <- setdiff(all_names, names(x))
+    for (col in missing_cols) x[[col]] <- NA
+    x[, all_names, drop = FALSE]
+  })
+  do.call(rbind, tables)
+}
+
 # ── Series-level metadata via NCBI E-utilities ───────────────────────────
 
 search <- request_json(
@@ -279,13 +332,9 @@ if (superseries_warning) {
 cat("Listing GEO supplementary files...\n")
 supplements_status <- "OK"
 supplements_message <- ""
-supplements <- tryCatch(
-  GEOquery::getGEOSuppFiles(
-    accession,
-    makeDirectory = FALSE,
-    baseDir = resources_dir,
-    fetch_files = FALSE
-  ),
+supplement_tables <- list()
+series_supplements <- tryCatch(
+  list_geo_supplements(accession, "series"),
   error = function(error) {
     supplements_status <<- "FAILED"
     supplements_message <<- conditionMessage(error)
@@ -302,11 +351,56 @@ supplements <- tryCatch(
     )
   }
 )
-supplement_rows <- rownames(supplements)
-supplements <- data.frame(supplements, check.names = FALSE)
+if (!identical(supplements_status, "FAILED")) {
+  supplement_tables[[length(supplement_tables) + 1L]] <- series_supplements
+}
+
+sample_supplement_failures <- character()
+sample_supplement_empty <- character()
+if (nrow(samples) > 0L) {
+  for (gsm in samples$gsm) {
+    if (!nzchar(gsm)) next
+    gsm_supp <- tryCatch(
+      list_geo_supplements(gsm, "sample"),
+      error = function(error) {
+        sample_supplement_failures <<- c(sample_supplement_failures, paste0(gsm, ": ", conditionMessage(error)))
+        data.frame()
+      }
+    )
+    if (nrow(gsm_supp) > 0L) {
+      supplement_tables[[length(supplement_tables) + 1L]] <- gsm_supp
+    } else {
+      sample_supplement_empty <- c(sample_supplement_empty, gsm)
+    }
+  }
+}
+if (length(sample_supplement_failures) > 0L) {
+  add_event(
+    "sample_supplements",
+    "warning",
+    "PARTIAL",
+    paste("Some sample-level supplementary listings failed:", paste(head(sample_supplement_failures, 5L), collapse = " | "))
+  )
+}
+if (length(sample_supplement_empty) > 0L) {
+  add_event(
+    "sample_supplements",
+    "info",
+    "EMPTY",
+    paste("No sample-level supplementary files returned for", length(sample_supplement_empty), "GSM accessions after retry.")
+  )
+}
+
+supplements <- if (length(supplement_tables) > 0L) {
+  supplements <- rbind_fill(supplement_tables)
+  rownames(supplements) <- NULL
+  supplements
+} else {
+  data.frame()
+}
 if (!identical(supplements_status, "FAILED") && (ncol(supplements) == 0L || nrow(supplements) == 0L)) {
   supplements_status <- "NO_SUPPLEMENT_FILES"
-  supplements_message <- "GEOquery returned no series-level supplementary files."
+  supplements_message <- "GEOquery returned no downloadable series- or sample-level supplementary files."
   add_event(
     "supplements",
     "info",
@@ -318,21 +412,6 @@ if (!identical(supplements_status, "FAILED") && (ncol(supplements) == 0L || nrow
     message = supplements_message,
     stringsAsFactors = FALSE
   )
-}
-if (identical(supplements_status, "OK") && nrow(supplements) > 0L) {
-  row_is_url <- grepl("^(https?|ftp)://", supplement_rows, ignore.case = TRUE)
-  url_col <- if ("url" %in% names(supplements)) as.character(supplements$url) else rep("", nrow(supplements))
-  url_col[is.na(url_col)] <- ""
-  col_is_url <- grepl("^(https?|ftp)://", url_col, ignore.case = TRUE)
-  supplements$supplement_url <- ifelse(row_is_url, supplement_rows, ifelse(col_is_url, url_col, NA_character_))
-  supplements$file_name <- ifelse(
-    row_is_url,
-    basename(supplement_rows),
-    if ("fname" %in% names(supplements)) basename(supplements$fname) else supplement_rows
-  )
-}
-if ("size" %in% names(supplements)) {
-  supplements$size_mb <- round(supplements$size / 1e6, 2)
 }
 utils::write.table(
   supplements,

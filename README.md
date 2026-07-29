@@ -1,10 +1,10 @@
 # GEO_biodata
 
-`GEO_biodata` is an agent-oriented workflow for public GEO biodata.
+`GEO_biodata` is a skill-first guide plus a small set of R helpers for public GEO biodata.
 
-It starts from a GEO Series accession, inventories public resources, builds reviewed download plans, validates an explicit manifest, and runs only the analysis route supported by the available data.
+It helps an agent start from a GEO accession, find the right public files, download reviewed inputs, inspect their format, and choose a practical analysis route.
 
-It is not a full R package and not a FASTQ processing framework. Raw data, downloaded supplements, sample mapping, design choices, logs, and status files are kept traceable.
+It is not a full R package, not a product framework, and not a replacement for established scRNA/bulk tools. Keep the repo lean: rules belong in the relevant `SKILL.md`, and R helpers exist only where they shorten a real GEO task.
 
 ## Choose The Narrow Skill
 
@@ -20,7 +20,7 @@ Use the smallest skill that matches the current task:
 | Independent source-table-linked figure planning, generation guidance, and QA | `geo-biodata-figure` |
 | Legacy prompts naming the old entry point | `geo-biodata-workflow` |
 
-Stable executor paths live under `core/R/`. The original script bundle remains under `skills/geo-biodata-workflow/scripts/` as a compatibility implementation while the public entry points move to the slimmer module layout.
+Stable helper scripts live under `core/R/`. The original script bundle remains under `skills/geo-biodata-workflow/scripts/` only as deprecated compatibility shims.
 
 ## Fast Download-Only Start
 
@@ -31,6 +31,7 @@ New-Item -ItemType Directory -Force runs\GSE000000 | Out-Null
 Rscript core\R\check_environment.R runs\GSE000000\environment.tsv
 Rscript core\R\bootstrap_environment.R --profile intake --check
 Rscript core\R\discover_geo.R GSE000000 runs\GSE000000
+Rscript core\R\generate_dataset_report.R runs\GSE000000
 ```
 
 Review:
@@ -73,23 +74,25 @@ $env:GEO_BIODATA_DOWNLOAD_TIMEOUT_SEC = "600"
 $env:GEO_BIODATA_DOWNLOAD_RETRIES = "5"
 ```
 
-### Download fallback strategy
+### Download Strategy
 
-When `utils::download.file` exhausts all retries, the downloader falls back to a backup method:
+For reviewed GEO supplements, the downloader uses this method order by default:
 
-1. **Primary**: R's built-in `utils::download.file` (libcurl backend) with configurable retries and exponential backoff
-2. **Backup (curl)**: If `curl` is on PATH and `GEO_BIODATA_DOWNLOAD_BACKUP=curl` (default), the downloader retries via the `curl` CLI with its own retry and timeout
-3. **Last resort (GEOquery)**: For NCBI FTP/GEO URLs specifically, `GEOquery::getGEOSuppFiles` is tried as a final alternative
+1. `GEOquery::getGEOSuppFiles`
+2. `aria2c`
+3. `curl`
+4. `utils::download.file`
 
-Configure backup behavior:
+Override only when troubleshooting a local network/runtime issue:
 
 ```powershell
-# Disable backup (primary-only)
-$env:GEO_BIODATA_DOWNLOAD_BACKUP = "none"
+$env:GEO_BIODATA_DOWNLOAD_METHODS = "geoquery,aria2c,curl,download.file"
 
-# Increase backup timeout (default 1200s = 20 min)
+# Increase command-line fallback timeout (default 1200s = 20 min)
 $env:GEO_BIODATA_BACKUP_TIMEOUT_SEC = "3600"
 ```
+
+On Windows, prefer the full x64 Rscript path for network-heavy commands if a shell-provided `Rscript` crashes during GEOquery or download calls.
 
 Linux/macOS shells use the same `Rscript` commands with `/` paths, for example:
 
@@ -118,7 +121,7 @@ Then select exactly one route:
 | `microarray_series_matrix` | `core\R\drivers\run_microarray.R` |
 | `scrna_author_object` | `core\R\scrna\inspect_object.R` |
 
-Use `geo-biodata-enrichment` only after a DE or ranked table exists. The current executable enrichment driver is preranked GSEA with a local GMT file; GO/KEGG/Reactome/ORA remain guidance handoffs until gene-ID mapping and background-universe contracts are supplied.
+Use `geo-biodata-enrichment` only after a DE, mapped gene list, or ranked table exists. Current helpers include preranked GSEA and ORA with a local GMT file; ORA requires an explicit gene universe and mapping audit.
 
 Use `geo-biodata-scrna-intake` for object inventory only. If reclustering, marker review, annotation, or condition DE is needed, use the handoff notes in `docs/handoffs/` with dedicated local single-cell skills. Cluster markers are descriptive; condition DE in scRNA should use sample/donor-level pseudobulk.
 
